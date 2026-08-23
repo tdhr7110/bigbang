@@ -33,6 +33,17 @@ const UPGRADES = [
   { id:'FUELX2',     name:'OVERCHARGE', desc:'燃料系の爆発が拡大' },
 ];
 
+const LEGEND_ITEMS = [
+  { type:'BLOCK',     label:'ブロック' },
+  { type:'GLASS',      label:'ガラス' },
+  { type:'FUEL',       label:'燃料' },
+  { type:'EXPLOSIVE',  label:'爆薬' },
+  { type:'BATTERY',    label:'電池' },
+  { type:'GAS',        label:'ガス' },
+  { type:'METAL',      label:'金属' },
+  { type:'WALL',       label:'壁' },
+];
+
 function isExplosiveFamily(t){ return t==='FUEL'||t==='EXPLOSIVE'||t==='GAS'; }
 
 /* ===================== BOARD GENERATION ===================== */
@@ -474,9 +485,12 @@ function drawBadge(ctx, letter, bw){
 }
 function drawCellContent(ctx, cell, gx, gy){
   if (!cell) return;
-  const cx = gx*cellPx + cellPx/2, cy = gy*cellPx + cellPx/2;
-  const pad = cellPx*0.16;
-  const bw = cellPx - pad*2;
+  drawIconAt(ctx, cell, gx*cellPx + cellPx/2, gy*cellPx + cellPx/2, cellPx);
+}
+function drawIconAt(ctx, cell, cx, cy, size){
+  if (!cell) return;
+  const pad = size*0.16;
+  const bw = size - pad*2;
   ctx.save();
   ctx.translate(cx, cy);
   switch (cell.type){
@@ -781,6 +795,19 @@ function showScreen(id){
   document.getElementById(id).classList.add('active');
   gameScreenActive = (id==='screen-game');
 }
+let legendDrawn = false;
+function drawLegend(){
+  if (legendDrawn) return;
+  const nodes = document.querySelectorAll('.legend-icon');
+  nodes.forEach(node => {
+    const type = node.dataset.type;
+    const lctx = node.getContext('2d');
+    const size = 72;
+    lctx.clearRect(0,0,size,size);
+    drawIconAt(lctx, makeCell(type), size/2, size/2, size);
+  });
+  legendDrawn = true;
+}
 function pad2(n){ return String(n).padStart(2,'0'); }
 function refreshHUD(){
   document.getElementById('hud-stage').textContent = pad2(run.stage);
@@ -818,7 +845,7 @@ function showResult(stats){
   run.score += stats.score;
   if (stats.chainCount > run.bestChain){
     run.bestChain = stats.chainCount;
-    localStorage.setItem(BEST_KEY, String(run.bestChain));
+    try { localStorage.setItem(BEST_KEY, String(run.bestChain)); } catch (e) {}
   }
   document.getElementById('res-total').textContent = '0';
   animateCount(document.getElementById('res-total'), stats.score, 700);
@@ -912,9 +939,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-blow').addEventListener('click', onBlowClick);
   document.getElementById('btn-result-next').addEventListener('click', onResultNext);
   document.getElementById('btn-retry').addEventListener('click', () => { AudioEngine.ensure(); startNewRun(); });
+  document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); showScreen('screen-howto'); });
+  document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
   canvas.addEventListener('pointerdown', onCanvasPointerDown);
 
-  const best = parseInt(localStorage.getItem(BEST_KEY)||'0', 10);
+  let best = 0;
+  try { best = parseInt(localStorage.getItem(BEST_KEY)||'0', 10) || 0; } catch (e) {}
   run.bestChain = best;
   document.getElementById('title-best-chain').textContent = best;
 

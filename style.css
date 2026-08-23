@@ -98,6 +98,15 @@ html, body {
   font-size: clamp(16px, 4.6vw, 19px);
   padding: 14px 20px;
 }
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+  font-weight: 500;
+  font-size: var(--fs-label);
+  padding: 6px 10px;
+}
+.btn-ghost:active { transform: none; opacity: 0.6; }
 
 /* ===================== TITLE ===================== */
 #screen-title {
@@ -276,6 +285,25 @@ html, body {
 .upgrade-card .u-name { font-size: var(--fs-body); font-weight: 700; letter-spacing: 0.04em; }
 .upgrade-card .u-desc { font-size: var(--fs-label); color: var(--text-2); }
 .upgrade-card .u-lv { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; }
+
+/* ===================== HOW TO PLAY ===================== */
+#screen-howto { align-items: center; justify-content: center; gap: 3.2vh; padding: 5vh 20px; }
+.howto-head { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.howto-title { margin: 0; font-size: var(--fs-stage); font-weight: 700; }
+.howto-steps { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
+.howto-step { display: flex; align-items: baseline; gap: 12px; }
+.step-no { font-size: 13px; color: var(--text-2); flex: 0 0 auto; width: 20px; }
+.step-text { font-size: var(--fs-body); color: var(--text); line-height: 1.4; }
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px 4px;
+  width: 100%;
+  max-width: 400px;
+}
+.legend-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.legend-icon { width: 34px; height: 34px; }
+.legend-item span { font-size: 11px; color: var(--text-2); letter-spacing: 0.02em; }
 
 /* ===================== FINAL ===================== */
 #screen-final { align-items: center; justify-content: center; gap: 7vh; padding: 12vh 20px 6vh; }

@@ -19,11 +19,49 @@
     </div>
     <div class="title-foot">
       <button id="btn-start" class="btn btn-accent btn-large">START</button>
+      <button id="btn-howto" class="btn btn-ghost">HOW TO PLAY</button>
       <div class="title-best">
         <span class="label">BEST CHAIN</span>
         <span id="title-best-chain" class="mono">0</span>
       </div>
     </div>
+  </section>
+
+  <!-- ===================== HOW TO PLAY ===================== -->
+  <section id="screen-howto" class="screen">
+    <div class="howto-head">
+      <span class="label">HOW TO PLAY</span>
+      <h2 class="howto-title">遊び方</h2>
+    </div>
+    <div class="howto-steps">
+      <div class="howto-step">
+        <span class="step-no mono">01</span>
+        <span class="step-text">盤面の空きマスをタップして爆弾を設置</span>
+      </div>
+      <div class="howto-step">
+        <span class="step-no mono">02</span>
+        <span class="step-text">BLOWで起爆。あとは連鎖を見届けるだけ</span>
+      </div>
+      <div class="howto-step">
+        <span class="step-no mono">03</span>
+        <span class="step-text">結果でDESTROY・CHAINなどのスコアを確認</span>
+      </div>
+      <div class="howto-step">
+        <span class="step-no mono">04</span>
+        <span class="step-text">アップグレードを選び、全8ステージへ挑戦</span>
+      </div>
+    </div>
+    <div class="legend-grid">
+      <div class="legend-item"><canvas class="legend-icon" data-type="BLOCK" width="72" height="72"></canvas><span>ブロック</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="GLASS" width="72" height="72"></canvas><span>ガラス</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="FUEL" width="72" height="72"></canvas><span>燃料</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="EXPLOSIVE" width="72" height="72"></canvas><span>爆薬</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="BATTERY" width="72" height="72"></canvas><span>電池</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="GAS" width="72" height="72"></canvas><span>ガス</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="METAL" width="72" height="72"></canvas><span>金属</span></div>
+      <div class="legend-item"><canvas class="legend-icon" data-type="WALL" width="72" height="72"></canvas><span>壁</span></div>
+    </div>
+    <button id="btn-howto-back" class="btn btn-large">BACK</button>
   </section>
 
   <!-- ===================== GAME ===================== -->
