@@ -593,6 +593,23 @@ function drawBombMarker(ctx, x, y, now){
   ctx.beginPath(); ctx.arc(cx,cy,cellPx*0.05,0,Math.PI*2); ctx.fill();
   ctx.restore();
 }
+function drawBlastPreview(ctx, x, y){
+  const cfg = deriveConfig(run.bombConfig.levels);
+  ctx.save();
+  ctx.strokeStyle = COLOR.text2;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,4]);
+  ctx.globalAlpha = 0.4;
+  const r = cfg.radius;
+  ctx.strokeRect((x-r)*cellPx+0.5, (y-r)*cellPx+0.5, (2*r+1)*cellPx, (2*r+1)*cellPx);
+  if (cfg.shockwaveLevel > 0){
+    const r2 = r + cfg.shockwaveLevel;
+    ctx.globalAlpha = 0.2;
+    ctx.strokeRect((x-r2)*cellPx+0.5, (y-r2)*cellPx+0.5, (2*r2+1)*cellPx, (2*r2+1)*cellPx);
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
 function drawGrid(){
   ctx.strokeStyle = COLOR.line; ctx.lineWidth = 1;
   for (let i=0;i<=COLS;i++){
@@ -627,7 +644,10 @@ function drawCells(now){
       drawCellContent(ctx, cell, m.fromX, yy);
     }
   }
-  if (uiState==='SELECT' && run.bombPos) drawBombMarker(ctx, run.bombPos.x, run.bombPos.y, now);
+  if (uiState==='SELECT' && run.bombPos){
+    drawBlastPreview(ctx, run.bombPos.x, run.bombPos.y);
+    drawBombMarker(ctx, run.bombPos.x, run.bombPos.y, now);
+  }
 }
 function drawEffects(now){
   effects = effects.filter(e => now-e.start < e.dur);

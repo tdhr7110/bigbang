@@ -287,13 +287,15 @@ html, body {
 .upgrade-card .u-lv { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; }
 
 /* ===================== HOW TO PLAY ===================== */
-#screen-howto { align-items: center; justify-content: center; gap: 3.2vh; padding: 5vh 20px; }
-.howto-head { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#screen-howto { align-items: center; justify-content: center; gap: 2vh; padding: 2.5vh 20px; }
+.howto-head { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .howto-title { margin: 0; font-size: var(--fs-stage); font-weight: 700; }
-.howto-steps { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
+.howto-steps { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 400px; }
 .howto-step { display: flex; align-items: baseline; gap: 12px; }
-.step-no { font-size: 13px; color: var(--text-2); flex: 0 0 auto; width: 20px; }
-.step-text { font-size: var(--fs-body); color: var(--text); line-height: 1.4; }
+.step-no { font-size: 12px; color: var(--text-2); flex: 0 0 auto; width: 20px; }
+.step-text { font-size: 13px; color: var(--text); line-height: 1.35; }
+.howto-tips { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 400px; padding-top: 4px; border-top: 1px solid var(--line); }
+.tip-row { font-size: 12px; color: var(--text-2); line-height: 1.4; }
 .legend-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
