@@ -1354,6 +1354,7 @@ async function runBlow(){
   resetPlaybackState();
   uiState = 'PLAYBACK';
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = true;
   AudioEngine.ensure();
   const cfg = deriveConfig();
   const result = simulate(run.board, run.bombPos, cfg);
@@ -1423,6 +1424,9 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   gameScreenActive = (id==='screen-game');
+  // CONTINUE/STAGE SELECT depend on save data that can change mid-session
+  // (e.g. starting a fresh campaign), so refresh them on every visit to title.
+  if (id==='screen-title') refreshTitleButtons();
 }
 function drawLegend(){
   const wrap = document.getElementById('howto-objects-list');
@@ -1793,6 +1797,7 @@ function enterStageScreen(){
   document.getElementById('retry-marker-label').hidden = true;
   document.getElementById('tips-toast').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
   refreshDebugPanel();
   armTipsIdleTimer();
   setTimeout(showTutorialIfNeeded, 200);
@@ -1815,6 +1820,7 @@ function retrySameStage(){
   updateBombStatsPanel();
   document.getElementById('direct-hit').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
   showRetryMarker();
   armTipsIdleTimer();
   if (run.stageFailCount >= 2) setTimeout(glowKeyParts, 500);
@@ -1893,6 +1899,7 @@ function startTutorial(){
   document.getElementById('retry-marker-label').hidden = true;
   document.getElementById('tips-toast').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
 }
 function exitTutorial(){
   run.isTutorial = false;
@@ -1984,25 +1991,23 @@ function hideHelp(){
   showScreen(helpReturnScreen);
   if (helpReturnScreen === 'screen-game') gameScreenActive = true;
 }
-function renderTutorialObjectsList(){
-  const wrap = document.getElementById('tutorial-objects-list');
-  wrap.innerHTML = '';
-  for (const li of LEGEND_ITEMS){
-    const type = li.type;
-    const info = PART_INFO[type];
-    if (!info) continue;
-    const item = document.createElement('div');
-    item.className = 'help-obj-item';
-    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
-      `<div class="help-obj-text"><div class="help-obj-name">${info.name}</div>` +
-      `<div class="help-obj-desc">${info.desc}</div>` +
-      `<div class="help-obj-tip">▸ ${info.tip}</div></div>`;
-    wrap.appendChild(item);
-    requestAnimationFrame(() => {
-      const c = item.querySelector('canvas');
-      drawIconAt(c.getContext('2d'), makeCell(type), 36, 36, 72);
-    });
-  }
+let tutorialObjIndex = 0;
+function renderTutorialObjCard(){
+  const li = LEGEND_ITEMS[tutorialObjIndex];
+  const info = PART_INFO[li.type];
+  document.getElementById('tutorial-obj-name').textContent = info.name;
+  document.getElementById('tutorial-obj-desc').textContent = info.desc;
+  document.getElementById('tutorial-obj-tip').textContent = `▸ ${info.tip}`;
+  document.getElementById('tutorial-obj-label').textContent = `${tutorialObjIndex+1} / ${LEGEND_ITEMS.length}`;
+  document.getElementById('btn-tutorial-obj-prev').disabled = tutorialObjIndex <= 0;
+  document.getElementById('btn-tutorial-obj-next').disabled = tutorialObjIndex >= LEGEND_ITEMS.length-1;
+  const canvas = document.getElementById('tutorial-obj-icon');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  drawIconAt(canvas.getContext('2d'), makeCell(li.type), 48, 48, 96);
+}
+function goToTutorialObj(delta){
+  tutorialObjIndex = Math.max(0, Math.min(LEGEND_ITEMS.length-1, tutorialObjIndex+delta));
+  renderTutorialObjCard();
 }
 
 /* ---- direct-hit preview (before BLOW; no chain/final result shown) ---- */
@@ -2042,6 +2047,14 @@ function onBlowClick(){
   document.getElementById('tips-toast').hidden = true;
   clearTimeout(tipsIdleTimer);
   runBlow();
+}
+function goToTitleFromGame(){
+  if (uiState==='PLAYBACK') return;
+  AudioEngine.ensure();
+  resetPlaybackState();
+  clearTimeout(tipsIdleTimer);
+  run.isTutorial = false;
+  showScreen('screen-title');
 }
 function onResultNext(){
   const stage = game.currentStage;
@@ -2101,13 +2114,16 @@ function initApp(){
   });
   document.getElementById('btn-newgame-confirm').addEventListener('click', () => startNewCampaign());
   document.getElementById('btn-newgame-cancel').addEventListener('click', () => showScreen('screen-title'));
-  document.getElementById('btn-tutorial').addEventListener('click', () => { renderTutorialObjectsList(); resetTabGroup('tutorial-tabs'); showScreen('screen-tutorial'); });
+  document.getElementById('btn-tutorial').addEventListener('click', () => { tutorialObjIndex = 0; renderTutorialObjCard(); resetTabGroup('tutorial-tabs'); showScreen('screen-tutorial'); });
   document.getElementById('btn-tutorial-back').addEventListener('click', () => { showScreen('screen-title'); });
   document.getElementById('btn-tutorial-start').addEventListener('click', () => startTutorial());
+  document.getElementById('btn-tutorial-obj-prev').addEventListener('click', () => goToTutorialObj(-1));
+  document.getElementById('btn-tutorial-obj-next').addEventListener('click', () => goToTutorialObj(1));
   document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); resetTabGroup('howto-tabs'); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
 
   /* -- gameplay -- */
+  document.getElementById('btn-game-title').addEventListener('click', goToTitleFromGame);
   document.getElementById('btn-blow').addEventListener('click', onBlowClick);
   document.getElementById('tutorial-dismiss').addEventListener('click', dismissTutorial);
   canvas.addEventListener('pointerdown', onCanvasPointerDown);
@@ -2141,7 +2157,6 @@ function initApp(){
 
   const loaded = loadGame();
   if (loaded) game = loaded;
-  refreshTitleButtons();
   showScreen('screen-title');
   requestAnimationFrame(draw);
 }
