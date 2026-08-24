@@ -319,6 +319,7 @@ html, body {
 .result-mini { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .result-mini .mono { font-size: 15px; font-weight: 600; }
 .result-mission-box { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.result-mission-box[hidden] { display: none; }
 .result-mission-box .mono { font-size: 13px; color: var(--text); }
 .mission-badge { font-size: 11px; letter-spacing: 0.1em; color: var(--text-2); }
 .mission-badge.ok { color: var(--accent); }

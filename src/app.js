@@ -943,6 +943,7 @@ const run = {
   board: null, bombPos: null,
   mission: null, search: null, genDebug: null,
   stageFailCount: 0, lastAttempt: null, tipsHintArea: null,
+  isTutorial: false,
 };
 
 function resizeCanvas(){
@@ -1506,9 +1507,15 @@ function analyzeStopReason(remainingObjects, cfg, eventLog){
 
 /* ---- mission-aware, star-based result screen ---- */
 function showResult(stats, eventLog){
+  if (run.isTutorial){ showTutorialResult(stats); return; }
   resetPlaybackState();
   uiState = 'IDLE';
   showScreen('screen-result');
+  document.getElementById('result-stars').hidden = false;
+  document.querySelector('.result-mission-box').hidden = false;
+  document.getElementById('btn-result-next').hidden = false;
+  document.getElementById('btn-result-retry').textContent = 'RETRY';
+  document.getElementById('btn-result-stgsel').textContent = 'STAGE SELECT';
 
   const stage = game.currentStage;
   const key = String(stage);
@@ -1573,6 +1580,43 @@ function showResult(stats, eventLog){
   document.getElementById('btn-result-next').disabled = !cleared;
   refreshHUD();
   refreshDebugPanel();
+}
+function showTutorialResult(stats){
+  resetPlaybackState();
+  uiState = 'IDLE';
+  showScreen('screen-result');
+
+  const rate = stats.totalDestructible ? stats.destroyCount/stats.totalDestructible : 0;
+  const notes = [];
+  if (stats.destroyedTypes.has('FUEL')) notes.push('FUELの誘爆連鎖を確認');
+  if (stats.destroyedTypes.has('EXPLOSIVE')) notes.push('EXPLOSIVEの大きな爆発を確認');
+  if (stats.destroyedTypes.has('GAS')) notes.push('GASの遅延爆発を確認');
+  if (stats.destroyedTypes.has('GLASS')) notes.push('火が回ってGLASSが破損');
+  if (stats.electricCount > 0) notes.push('BATTERY+METALの感電を確認');
+  if (stats.chainCount >= 3) notes.push(`CHAIN ×${stats.chainCount}の連鎖`);
+  const wallLeft = stats.remainingObjects.some(o=>o.type==='WALL');
+  const nonWallLeft = stats.remainingObjects.some(o=>o.type!=='WALL');
+  if (wallLeft && nonWallLeft) notes.push('WALLに阻まれて壊れなかった箇所あり');
+
+  document.getElementById('result-status').textContent = 'TUTORIAL';
+  document.getElementById('result-status').classList.remove('fail');
+  document.getElementById('result-status').classList.add('ok');
+  document.getElementById('result-stars').hidden = true;
+  document.getElementById('res-rate').textContent = Math.round(rate*100)+'%';
+  document.getElementById('res-destroy').textContent = stats.destroyCount;
+  document.getElementById('res-chain').textContent = '×'+stats.chainCount;
+  document.getElementById('res-electric').textContent = '×'+stats.electricCount;
+  document.getElementById('res-burst').textContent = stats.maxBurst;
+  document.querySelector('.result-mission-box').hidden = true;
+
+  const hintEl = document.getElementById('result-fail-hint');
+  hintEl.textContent = notes.length ? notes.join(' / ') : 'この配置ではあまり連鎖しなかった。別の場所を試してみよう。';
+  hintEl.hidden = false;
+
+  document.getElementById('btn-result-next').hidden = true;
+  document.getElementById('btn-result-next').disabled = true;
+  document.getElementById('btn-result-retry').textContent = 'もう一度';
+  document.getElementById('btn-result-stgsel').textContent = 'タイトルへ戻る';
 }
 /* ---- new-object tutorial ---- */
 let tutorialQueue = [];
@@ -1802,6 +1846,59 @@ function continueCampaign(){
   goToStage(game.currentStage);
 }
 
+/* ===================== TUTORIAL MODE ===================== */
+// A free-play sandbox, separate from the 100-stage campaign: no score, no
+// stars, no mission, no save writes, infinite retries on the same
+// hand-built board. Every object type appears at least once so a player can
+// freely experiment with each mechanic without any stage-clear pressure.
+let tutorialBoard = null;
+function buildTutorialBoard(){
+  const board = [];
+  for (let y=0;y<ROWS;y++) board.push(new Array(COLS).fill(null));
+  const set = (x,y,type) => { board[y][x] = makeCell(type); };
+  // FUEL cluster - blowing nearby chains through several tanks at once
+  set(1,1,'FUEL'); set(2,1,'FUEL'); set(1,2,'FUEL'); set(2,2,'BLOCK');
+  // EXPLOSIVE - the one deliberately bigger payoff
+  set(5,1,'EXPLOSIVE');
+  // WALL segment shielding two BLOCKs behind it - blast can't pass through
+  set(4,3,'WALL'); set(4,4,'WALL'); set(4,5,'WALL');
+  set(5,4,'BLOCK'); set(6,4,'BLOCK');
+  // GAS - explodes a beat late instead of immediately
+  set(1,5,'GAS');
+  // GLASS - out of direct reach, only breaks if fire spreads to it from FUEL
+  set(6,1,'GLASS'); set(6,2,'FUEL');
+  // BATTERY+METAL - knocking either one over discharges into the FUEL next to it
+  set(1,6,'BATTERY'); set(2,6,'METAL'); set(2,5,'FUEL');
+  // plain BLOCKs scattered around
+  set(3,0,'BLOCK'); set(6,6,'BLOCK'); set(0,4,'BLOCK'); set(3,7,'BLOCK');
+  return board;
+}
+function startTutorial(){
+  AudioEngine.ensure();
+  if (!tutorialBoard) tutorialBoard = buildTutorialBoard();
+  resetPlaybackState();
+  run.isTutorial = true;
+  run.board = tutorialBoard;
+  run.bombPos = null;
+  run.mission = null;
+  run.lastAttempt = null;
+  currentBoard = run.board;
+  uiState = 'SELECT';
+  showScreen('screen-game');
+  requestAnimationFrame(resizeCanvas);
+  document.getElementById('hud-stage').textContent = 'TUTORIAL';
+  document.getElementById('mission-text').textContent = '自由に爆弾を置いて試そう。何度でもやり直せる。';
+  updateBombStatsPanel();
+  document.getElementById('direct-hit').hidden = true;
+  document.getElementById('retry-marker-label').hidden = true;
+  document.getElementById('tips-toast').hidden = true;
+  document.getElementById('btn-blow').disabled = true;
+}
+function exitTutorial(){
+  run.isTutorial = false;
+  showScreen('screen-title');
+}
+
 /* ---- title / stage select ---- */
 function refreshTitleButtons(){
   const has = hasSaveData();
@@ -1967,6 +2064,12 @@ function initApp(){
   ctx = canvas.getContext('2d');
   window.addEventListener('resize', resizeCanvas);
   window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 60));
+  // Browsers auto-suspend the AudioContext when the tab/app goes to the
+  // background; proactively try to resume it as soon as it's visible again
+  // so the next sound doesn't get dropped while resume() is still pending.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') AudioEngine.ensure();
+  });
 
   /* -- title -- */
   document.getElementById('btn-continue').addEventListener('click', () => { AudioEngine.ensure(); continueCampaign(); });
@@ -1978,6 +2081,7 @@ function initApp(){
   });
   document.getElementById('btn-newgame-confirm').addEventListener('click', () => startNewCampaign());
   document.getElementById('btn-newgame-cancel').addEventListener('click', () => showScreen('screen-title'));
+  document.getElementById('btn-tutorial').addEventListener('click', () => startTutorial());
   document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); resetTabGroup('howto-tabs'); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
 
@@ -1991,8 +2095,8 @@ function initApp(){
 
   /* -- result -- */
   document.getElementById('btn-result-next').addEventListener('click', onResultNext);
-  document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); retrySameStage(); });
-  document.getElementById('btn-result-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
+  document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); if (run.isTutorial) startTutorial(); else retrySameStage(); });
+  document.getElementById('btn-result-stgsel').addEventListener('click', () => { AudioEngine.ensure(); if (run.isTutorial) exitTutorial(); else showStageSelect(); });
 
 
   /* -- stage select / help / final -- */
