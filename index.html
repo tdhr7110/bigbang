@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=8" />
+<link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
 <div id="app">
@@ -21,6 +21,7 @@
       <h1 class="title-logo">EXPLOSION</h1>
       <p class="title-sub">爆弾を1個。最大の連鎖を。</p>
       <div class="title-badge" id="title-badge" hidden>★ PERFECT CLEAR ★</div>
+      <div class="title-badge title-badge-trophy" id="title-legacy-badge" hidden>🏆 EARLY CLEAR 🏆</div>
     </div>
     <div class="title-foot">
       <button id="btn-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
@@ -99,6 +100,18 @@
     </div>
   </section>
 
+  <!-- ===================== REGENERATE BOARDS CONFIRM ===================== -->
+  <section id="screen-regen-confirm" class="screen">
+    <div class="confirm-card">
+      <div class="label">盤面を作り直す</div>
+      <p class="confirm-text">全ステージの盤面を新しく作り直します。解放済みのステージ・トータルスコアはそのまま維持されますが、各ステージの★やベスト記録はリセットされます。よろしいですか？</p>
+      <div class="confirm-actions">
+        <button id="btn-regen-cancel" class="btn btn-large">CANCEL</button>
+        <button id="btn-regen-confirm" class="btn btn-danger btn-large">作り直す</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ===================== HOW TO PLAY ===================== -->
   <section id="screen-howto" class="screen">
     <div class="howto-head">
@@ -161,6 +174,7 @@
       <button id="btn-chapter-next" class="chapter-arrow">›</button>
     </div>
     <div class="stage-grid" id="stage-grid"></div>
+    <button id="btn-regen-boards" class="btn btn-ghost">盤面を作り直す</button>
     <button id="btn-stgsel-back" class="btn btn-large">BACK</button>
   </section>
 
@@ -314,6 +328,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=8"></script>
+<script src="src/app.js?v=9"></script>
 </body>
 </html>

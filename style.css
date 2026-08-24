@@ -139,7 +139,7 @@ html, body {
 .title-best .mono { font-size: var(--fs-score); font-weight: 700; }
 
 /* ===================== NEW GAME CONFIRM ===================== */
-#screen-newgame-confirm { align-items: center; justify-content: center; padding: 6vh 20px; }
+#screen-newgame-confirm, #screen-regen-confirm { align-items: center; justify-content: center; padding: 6vh 20px; }
 .confirm-card {
   display: flex;
   flex-direction: column;
@@ -492,6 +492,7 @@ html, body {
   border: 1px solid var(--accent); border-radius: 8px;
 }
 .title-badge { margin-top: 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--accent); }
+.title-badge-trophy { margin-top: 4px; color: var(--text); }
 
 @media (min-width: 700px) {
   #screen-game { max-width: 480px; margin: 0 auto; }

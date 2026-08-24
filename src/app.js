@@ -1404,6 +1404,10 @@ function freshGameState(){
     bestChain: 0,
     settings: {},
     runSeed: Date.now() ^ Math.floor(Math.random()*0xffffffff),
+    // A brand new campaign obviously hasn't cleared stage 100, so there's nothing to
+    // migrate - mark the one-time legacy-trophy check as already done.
+    legacyClear100: false,
+    legacyCheckDone: true,
   };
 }
 function hasSaveData(){
@@ -1438,6 +1442,10 @@ function loadGame(){
       bestChain: data.bestChain || 0,
       settings: data.settings || {},
       runSeed: data.runSeed || (Date.now() ^ Math.floor(Math.random()*0xffffffff)),
+      // Missing on any save from before the legacy-trophy feature shipped - that's
+      // exactly the signal checkLegacyTrophy() needs to run its one-time check.
+      legacyClear100: !!data.legacyClear100,
+      legacyCheckDone: !!data.legacyCheckDone,
     };
   } catch (e) {
     try { localStorage.removeItem(SAVE_KEY); } catch (e2) {}
@@ -1445,6 +1453,18 @@ function loadGame(){
   }
 }
 let game = freshGameState();
+// One-time migration: a save that already had stage 100 cleared the FIRST time this
+// code ever runs for it was necessarily playing under the pre-difficulty-rework
+// generator - reward that with a permanent trophy. Runs at most once per save (gated
+// by legacyCheckDone), so it can never be earned retroactively by a save that reaches
+// stage 100 for the first time under the new, harder generator.
+function checkLegacyTrophy(){
+  if (game.legacyCheckDone) return;
+  game.legacyCheckDone = true;
+  const p100 = game.stageProgress[String(TOTAL_STAGES)];
+  if (p100 && p100.stars >= 1) game.legacyClear100 = true;
+  saveGame();
+}
 
 /* ===================== UI / SCREEN FLOW ===================== */
 function showScreen(id){
@@ -1878,9 +1898,20 @@ function startNewCampaign(){
   saveGame();
   goToStage(1);
 }
+// Keeps stage access (unlockedStage/currentStage) and lifetime totals (totalScore,
+// bestChain) exactly as they are, but throws away every cached board/mission/star so
+// every stage gets freshly generated (under whatever the current generator is) the
+// next time it's visited. A new runSeed is required - reusing the old one would just
+// regenerate the exact same boards, since generation is fully deterministic from it.
+function regenerateBoards(){
+  game.runSeed = Date.now() ^ Math.floor(Math.random()*0xffffffff);
+  game.stageProgress = {};
+  saveGame();
+}
 function continueCampaign(){
   const loaded = loadGame();
   game = loaded || freshGameState();
+  checkLegacyTrophy();
   goToStage(game.currentStage);
 }
 
@@ -1944,11 +1975,13 @@ function refreshTitleButtons(){
   document.getElementById('btn-continue').hidden = !has;
   document.getElementById('btn-stage-select').hidden = !has;
   document.getElementById('title-badge').hidden = !(has && isPerfectClear());
+  document.getElementById('title-legacy-badge').hidden = !(has && game.legacyClear100);
 }
 let currentChapter = 1;
 function showStageSelect(){
   const loaded = loadGame();
   if (loaded) game = loaded;
+  checkLegacyTrophy();
   showScreen('screen-stage-select');
   document.getElementById('stgsel-score').textContent = game.totalScore.toLocaleString();
   currentChapter = Math.min(CHAPTER_COUNT, Math.max(1, Math.ceil(game.currentStage/CHAPTER_SIZE)));
@@ -2176,6 +2209,12 @@ function initApp(){
   document.getElementById('btn-stgsel-back').addEventListener('click', () => showScreen('screen-title'));
   document.getElementById('btn-chapter-prev').addEventListener('click', () => goToChapter(-1));
   document.getElementById('btn-chapter-next').addEventListener('click', () => goToChapter(1));
+  document.getElementById('btn-regen-boards').addEventListener('click', () => showScreen('screen-regen-confirm'));
+  document.getElementById('btn-regen-cancel').addEventListener('click', () => showScreen('screen-stage-select'));
+  document.getElementById('btn-regen-confirm').addEventListener('click', () => {
+    regenerateBoards();
+    showStageSelect();
+  });
   document.getElementById('btn-help-back').addEventListener('click', hideHelp);
   wireTabGroup('help-tabs');
   wireTabGroup('howto-tabs');
@@ -2192,6 +2231,7 @@ function initApp(){
 
   const loaded = loadGame();
   if (loaded) game = loaded;
+  checkLegacyTrophy();
   showScreen('screen-title');
   requestAnimationFrame(draw);
 }
