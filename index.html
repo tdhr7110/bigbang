@@ -18,11 +18,21 @@
       <p class="title-sub">爆弾を1個。最大の連鎖を。</p>
     </div>
     <div class="title-foot">
-      <button id="btn-start" class="btn btn-accent btn-large">START</button>
+      <button id="btn-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
+      <button id="btn-stage-select" class="btn btn-large" hidden>STAGE SELECT</button>
+      <button id="btn-newgame" class="btn btn-large">NEW GAME</button>
       <button id="btn-howto" class="btn btn-ghost">HOW TO PLAY</button>
-      <div class="title-best">
-        <span class="label">BEST CHAIN</span>
-        <span id="title-best-chain" class="mono">0</span>
+    </div>
+  </section>
+
+  <!-- ===================== NEW GAME CONFIRM ===================== -->
+  <section id="screen-newgame-confirm" class="screen">
+    <div class="confirm-card">
+      <div class="label">NEW GAME</div>
+      <p class="confirm-text">現在の進行状況（ステージ・レベル・記録）は上書きされます。よろしいですか？</p>
+      <div class="confirm-actions">
+        <button id="btn-newgame-cancel" class="btn btn-large">CANCEL</button>
+        <button id="btn-newgame-confirm" class="btn btn-danger btn-large">RESET &amp; START</button>
       </div>
     </div>
   </section>
@@ -36,7 +46,7 @@
     <div class="howto-steps">
       <div class="howto-step">
         <span class="step-no mono">01</span>
-        <span class="step-text">盤面の空きマスをタップして爆弾を設置（1ステージ1回だけ）</span>
+        <span class="step-text">盤面の空きマスをタップして爆弾を設置（1ステージ1個だけ）</span>
       </div>
       <div class="howto-step">
         <span class="step-no mono">02</span>
@@ -44,11 +54,11 @@
       </div>
       <div class="howto-step">
         <span class="step-no mono">03</span>
-        <span class="step-text">結果画面でDESTROY・CHAIN・ELECTRICなどのスコアを確認</span>
+        <span class="step-text">EXPLOSION RATEで星0〜3、MISSIONは星と別の追加目標</span>
       </div>
       <div class="howto-step">
         <span class="step-no mono">04</span>
-        <span class="step-text">3択からアップグレードを1つ選び、全8ステージに挑戦</span>
+        <span class="step-text">星1個以上で次のステージへ。RETRYはいつでも自由</span>
       </div>
     </div>
     <div class="howto-tips">
@@ -70,6 +80,17 @@
     <button id="btn-howto-back" class="btn btn-large">BACK</button>
   </section>
 
+  <!-- ===================== STAGE SELECT ===================== -->
+  <section id="screen-stage-select" class="screen">
+    <div class="stgsel-head">
+      <span class="label">STAGE SELECT</span>
+      <div class="stgsel-level">Lv.<span id="stgsel-level" class="mono">1</span></div>
+    </div>
+    <div class="chapter-tabs" id="chapter-tabs"></div>
+    <div class="stage-grid" id="stage-grid"></div>
+    <button id="btn-stgsel-back" class="btn btn-large">BACK</button>
+  </section>
+
   <!-- ===================== GAME ===================== -->
   <section id="screen-game" class="screen">
     <header class="hud">
@@ -78,12 +99,11 @@
         <span id="hud-stage" class="mono value">01</span>
       </div>
       <div class="hud-item hud-center">
-        <span class="label">SCORE</span>
-        <span id="hud-score" class="mono value value-lg">0</span>
+        <span class="label">LV</span>
+        <span id="hud-level" class="mono value value-lg">1</span>
       </div>
       <div class="hud-item hud-right">
-        <span class="label">BEST CHAIN</span>
-        <span id="hud-best" class="mono value">0</span>
+        <button id="btn-help" class="help-btn">？</button>
       </div>
     </header>
 
@@ -95,12 +115,22 @@
     <div class="board-wrap">
       <canvas id="board-canvas" width="640" height="640"></canvas>
       <div id="chain-popup" class="chain-popup"></div>
+      <div id="direct-hit" class="direct-hit" hidden></div>
+      <div id="retry-marker-label" class="retry-marker-label" hidden></div>
+      <div id="tips-toast" class="tips-toast" hidden>TIPS AVAILABLE</div>
       <div class="tutorial-overlay" id="tutorial-overlay" hidden>
         <div class="tutorial-card">
           <span class="label">NEW OBJECT</span>
           <div class="tutorial-name mono" id="tutorial-name"></div>
           <div class="tutorial-desc" id="tutorial-desc"></div>
           <button id="tutorial-dismiss" class="btn btn-accent">OK</button>
+        </div>
+      </div>
+      <div class="tips-overlay" id="tips-overlay" hidden>
+        <div class="tips-card">
+          <span class="label" id="tips-stage-label">TIPS 1</span>
+          <div class="tips-text" id="tips-text"></div>
+          <button id="tips-dismiss" class="btn btn-accent">OK</button>
         </div>
       </div>
     </div>
@@ -116,22 +146,50 @@
     </footer>
   </section>
 
+  <!-- ===================== HELP OVERLAY (in-game "?") ===================== -->
+  <section id="screen-help" class="screen">
+    <div class="help-head">
+      <span class="label">HELP</span>
+      <div class="help-tabs">
+        <button class="help-tab active" data-tab="status">STATUS</button>
+        <button class="help-tab" data-tab="objects">OBJECTS</button>
+        <button class="help-tab" data-tab="tips">TIPS</button>
+      </div>
+    </div>
+    <div class="help-panel" id="help-panel-status">
+      <div class="help-row"><span class="label">MISSION</span><span id="help-mission" class="mono"></span></div>
+      <div class="help-row"><span class="label">BOMB</span><span id="help-bomb" class="mono"></span></div>
+      <div class="help-row"><span class="label">UPGRADES</span><span id="help-upgrades" class="mono"></span></div>
+    </div>
+    <div class="help-panel" id="help-panel-objects" hidden></div>
+    <div class="help-panel" id="help-panel-tips" hidden>
+      <div class="tip-row">爆薬・燃料の近くから連鎖を始めると、遠くまで連鎖を伸ばしやすい</div>
+      <div class="tip-row">中央ほど爆風を余さず使える。端や角は一部が盤面外へ逃げる</div>
+      <div class="tip-row">金属+電池は感電の起点。壊れない壁の裏は安全地帯</div>
+    </div>
+    <button id="btn-help-back" class="btn btn-large">CLOSE</button>
+  </section>
+
   <!-- ===================== RESULT ===================== -->
   <section id="screen-result" class="screen">
     <div class="result-wrap">
       <div class="result-label" id="result-status">MISSION COMPLETE</div>
-      <div class="result-mission mono" id="result-mission-line"></div>
-      <div class="result-main">
-        <div class="result-row result-destroy">
-          <span class="result-num mono" id="res-destroy">0%</span>
-          <span class="result-tag">DESTROY</span>
-        </div>
-        <div class="result-row result-chain">
-          <span class="result-num mono" id="res-chain">×0</span>
-          <span class="result-tag">CHAIN</span>
-        </div>
+      <div class="result-stars" id="result-stars">
+        <span class="star" data-i="1">★</span><span class="star" data-i="2">★</span><span class="star" data-i="3">★</span>
+      </div>
+      <div class="result-rate">
+        <span class="result-rate-num mono" id="res-rate">0%</span>
+        <span class="result-tag">EXPLOSION RATE</span>
       </div>
       <div class="result-sub">
+        <div class="result-mini">
+          <span class="label">DESTROY</span>
+          <span id="res-destroy" class="mono">0</span>
+        </div>
+        <div class="result-mini">
+          <span class="label">CHAIN</span>
+          <span id="res-chain" class="mono">×0</span>
+        </div>
         <div class="result-mini">
           <span class="label">ELECTRIC</span>
           <span id="res-electric" class="mono">×0</span>
@@ -140,34 +198,40 @@
           <span class="label">MAX BURST</span>
           <span id="res-burst" class="mono">0</span>
         </div>
-        <div class="result-mini">
-          <span class="label">FULL CLEAR</span>
-          <span id="res-fullclear" class="mono">—</span>
-        </div>
+      </div>
+      <div class="result-mission-box">
+        <span class="label">MISSION</span>
+        <span id="result-mission-line" class="mono"></span>
+        <span id="result-mission-badge" class="mission-badge"></span>
       </div>
       <div class="result-fail-hint" id="result-fail-hint" hidden></div>
-      <div class="result-total">
-        <span class="label">TOTAL</span>
-        <span id="res-total" class="mono value-xl">0</span>
+      <div class="result-xp" id="result-xp" hidden>
+        <span class="label">EXP</span>
+        <span id="res-xp-gain" class="mono">+0</span>
       </div>
     </div>
-    <button id="btn-result-next" class="btn btn-accent btn-large">NEXT</button>
-    <button id="btn-result-retry" class="btn btn-danger btn-large" hidden>RETRY</button>
+    <div class="result-actions">
+      <button id="btn-result-next" class="btn btn-accent btn-large" disabled>NEXT</button>
+      <button id="btn-result-retry" class="btn btn-large">RETRY</button>
+      <button id="btn-result-stgsel" class="btn btn-ghost">STAGE SELECT</button>
+    </div>
   </section>
 
-  <!-- ===================== UPGRADE ===================== -->
+  <!-- ===================== LEVEL UP / UPGRADE ===================== -->
   <section id="screen-upgrade" class="screen">
     <div class="upgrade-head">
-      <span class="label">SELECT UPGRADE</span>
-      <h2 class="upgrade-title">爆弾を強化する</h2>
+      <span class="label" id="upgrade-label">SELECT UPGRADE</span>
+      <h2 class="upgrade-title" id="upgrade-title">爆弾を強化する</h2>
     </div>
+    <div class="next-stage-preview" id="next-stage-preview"></div>
     <div id="upgrade-cards" class="upgrade-cards"></div>
+    <button id="btn-upgrade-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
   </section>
 
-  <!-- ===================== GAME OVER / FINAL ===================== -->
+  <!-- ===================== CAMPAIGN COMPLETE ===================== -->
   <section id="screen-final" class="screen">
     <div class="final-wrap">
-      <div class="final-label">RUN COMPLETE</div>
+      <div class="final-label">CAMPAIGN COMPLETE</div>
       <div class="final-score mono" id="final-score">0</div>
       <div class="final-sub">
         <div class="result-mini">
@@ -180,7 +244,7 @@
         </div>
       </div>
     </div>
-    <button id="btn-retry" class="btn btn-accent btn-large">RETRY</button>
+    <button id="btn-final-stgsel" class="btn btn-accent btn-large">STAGE SELECT</button>
   </section>
 
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
