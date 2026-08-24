@@ -331,48 +331,9 @@ html, body {
   max-width: 340px;
   white-space: pre-line;
 }
-.result-xp { display: flex; gap: 8px; align-items: baseline; }
-.result-xp .mono { font-size: 15px; color: var(--accent); font-weight: 700; }
 .result-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 300px; }
 .result-actions .btn-large { width: 100%; }
 .result-actions .btn-ghost { padding: 8px; }
-
-/* ===================== UPGRADE / LEVEL UP ===================== */
-#screen-upgrade { align-items: center; justify-content: center; gap: 2.4vh; padding: 4vh 20px; }
-.upgrade-head { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.upgrade-title { margin: 0; font-size: var(--fs-stage); font-weight: 700; }
-.next-stage-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--text-2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 14px;
-  width: 100%;
-  max-width: 380px;
-  text-align: center;
-}
-.next-stage-preview b { color: var(--text); }
-.upgrade-cards { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 420px; }
-.upgrade-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 16px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, transform 80ms ease;
-}
-.upgrade-card:active { transform: scale(0.98); }
-.upgrade-card.selected { border-color: var(--accent); background: var(--surface-2); }
-.upgrade-card .u-name { font-size: var(--fs-body); font-weight: 700; letter-spacing: 0.04em; }
-.upgrade-card .u-desc { font-size: var(--fs-label); color: var(--text-2); }
-.upgrade-card .u-lv { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; }
 
 /* ===================== HOW TO PLAY ===================== */
 #screen-howto { align-items: center; justify-content: center; gap: 2vh; padding: 2.5vh 20px; }
@@ -513,7 +474,7 @@ html, body {
 
 @media (min-width: 700px) {
   #screen-game { max-width: 480px; margin: 0 auto; }
-  #screen-result .result-wrap, .upgrade-cards { max-width: 380px; }
+  #screen-result .result-wrap { max-width: 380px; }
 }
 
 /* ===================== DEBUG ===================== */
