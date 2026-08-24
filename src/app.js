@@ -31,6 +31,19 @@ const UPGRADES = [
   { id:'DOUBLETAP',  name:'DOUBLE TAP', desc:'時間差でもう一度爆発' },
   { id:'FUELX2',     name:'OVERCHARGE', desc:'燃料系の爆発が拡大' },
 ];
+// Hard caps on each upgrade's level. Without these, RANGE/OVERCHARGE eventually grow the
+// blast footprint past what an 8x8 board can meaningfully hide a solution in. Measured
+// empirically: even RANGE+1 (radius 3, a 7x7 direct-hit area = 76% of the board) already
+// pushes star1-eligible placements to 60-100% on most stages regardless of board design,
+// since a direct hit that big destroys most filler objects no matter where it lands - no
+// amount of wall-boxing or density tuning can compensate for that. So RANGE is excluded
+// entirely (cap 0); OVERCHARGE is capped at 1 (its effect saturates quickly against chain
+// connectivity rather than raw reach); CONDUCTIVE's cap matches its own dead zone (reach
+// already maxes out at level 2 in the simulation code); SHOCKWAVE/BURN only affect glass
+// breaking / fire duration, not raw destructive footprint, but still measurably loosen
+// things when stacked together with the others, so they stay capped too rather than
+// growing unbounded.
+const UPGRADE_MAX_LEVEL = { RANGE:0, SHOCKWAVE:2, BURN:2, CONDUCTIVE:2, DOUBLETAP:1, FUELX2:1 };
 
 const LEGEND_ITEMS = [
   { type:'BLOCK',     label:'ブロック' },
@@ -191,20 +204,26 @@ function ensureMetalBatteryPair(board, rng){
 // blast line-of-sight is blocked by WALL cells lying on the straight line to a target,
 // this sharply narrows which bomb positions can actually reach the cell that starts
 // the chain - without it, a fixed blast radius makes almost every placement "good enough".
-function narrowLineOfSight(board, stage, rng){
+function narrowLineOfSight(board, stage, rng, cfg){
   const parts = stagePartsFor(stage);
   if (!parts.includes('WALL')) return;
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
-  if (t < 0.35) return;
+  // A bigger-than-base blast radius acts like a much harder stage for this pass: it needs
+  // boxing sooner and more aggressively, since raw distance stops mattering once the blast
+  // already reaches most of the board - only line-of-sight (which WALL blocks regardless
+  // of distance) can still narrow down which placement actually works.
+  const extraR = cfg ? Math.max(0, cfg.radius-2) : 0;
+  const effectiveT = Math.min(1, t + extraR*0.3);
+  if (effectiveT < 0.35) return;
   const keyCells = [];
   forEachCell(board, (c,x,y) => { if (c && isExplosiveFamily(c.type)) keyCells.push({x,y}); });
-  const boxProb = Math.min(0.95, 0.3 + t*0.85);
+  const boxProb = Math.min(0.95, 0.3 + effectiveT*0.85);
   const protectedTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
   for (const k of keyCells){
     if (rng() > boxProb) continue;
     const dirs = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
     for (let i=dirs.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
-    const openSides = rng() < (0.65-0.25*t) ? 1 : 2;
+    const openSides = rng() < (0.65-0.25*effectiveT) ? 1 : 2;
     for (let i=openSides; i<dirs.length; i++){
       const nx = k.x+dirs[i].dx, ny = k.y+dirs[i].dy;
       if (nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
@@ -214,7 +233,7 @@ function narrowLineOfSight(board, stage, rng){
     }
   }
 }
-function generateBoardRaw(stageIndex, rng){
+function generateBoardRaw(stageIndex, rng, cfg){
   const weights = stageWeights(stageIndex);
   const board = [];
   for (let y=0;y<ROWS;y++){
@@ -231,7 +250,7 @@ function generateBoardRaw(stageIndex, rng){
   if (parts.includes('GAS')) explosiveFamily.push('GAS');
   ensureMinCount(board, explosiveFamily, 2, rng);
   if (parts.includes('BATTERY') && parts.includes('METAL')) ensureMetalBatteryPair(board, rng);
-  narrowLineOfSight(board, stageIndex, rng);
+  narrowLineOfSight(board, stageIndex, rng, cfg);
   return board;
 }
 function countDestructible(board){
@@ -652,7 +671,7 @@ function evaluateBoardQuality(stage, search, mission){
 
   return { ok:true, star1Count, star1Ratio, solveCount, best, median, bestSolving };
 }
-function buildFallbackBoard(stage, rng){
+function buildFallbackBoard(stage, rng, cfg){
   const parts = stagePartsFor(stage);
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
   const board = [];
@@ -678,6 +697,8 @@ function buildFallbackBoard(stage, rng){
     board[cy+1][cx-1] = makeCell('BATTERY');
   }
   ensureMinEmpty(board, 6, rng);
+  // even the safety-net board should resist an oversized blast radius when it can
+  narrowLineOfSight(board, stage, rng, cfg);
   return board;
 }
 const MAX_GENERATION_ATTEMPTS = 50;
@@ -687,7 +708,7 @@ function generateStage(stage, cfg, runSeed){
   for (let i=0; i<MAX_GENERATION_ATTEMPTS; i++){
     const seed = hashSeed(runSeed+'|stage'+stage+'|attempt'+i);
     const rng = mulberry32(seed);
-    const board = generateBoardRaw(stage, rng);
+    const board = generateBoardRaw(stage, rng, cfg);
     const search = exhaustiveSearch(board, cfg);
     if (!search.best){ attempts.push({seed, ok:false, reason:'空きマスなし'}); continue; }
     const mission = pickMission(stage, search);
@@ -701,7 +722,7 @@ function generateStage(stage, cfg, runSeed){
   if (!chosen){
     const seed = hashSeed(runSeed+'|stage'+stage+'|fallback');
     const rng = mulberry32(seed);
-    const board = buildFallbackBoard(stage, rng);
+    const board = buildFallbackBoard(stage, rng, cfg);
     const search = exhaustiveSearch(board, cfg);
     const mission = pickMission(stage, search);
     const quality = evaluateBoardQuality(stage, search, mission);
@@ -1502,9 +1523,16 @@ function showLevelUp(){
   } else {
     previewEl.innerHTML = 'FINAL STAGE CLEARED';
   }
-  const pool = shuffle(UPGRADES).slice(0,3);
+  const available = UPGRADES.filter(u => game.bombConfig.levels[u.id] < UPGRADE_MAX_LEVEL[u.id]);
+  const pool = shuffle(available).slice(0,3);
   const wrap = document.getElementById('upgrade-cards');
   wrap.innerHTML = '';
+  if (!pool.length){
+    // every power upgrade is already capped - nothing meaningful to offer, so don't
+    // block progress on an empty choice screen.
+    afterLevelUpPick();
+    return;
+  }
   document.getElementById('btn-upgrade-continue').hidden = true;
   for (const u of pool){
     const lvl = game.bombConfig.levels[u.id];
@@ -1515,7 +1543,7 @@ function showLevelUp(){
       if (card.dataset.picked) return;
       card.dataset.picked = '1';
       card.classList.add('selected');
-      game.bombConfig.levels[u.id]++;
+      game.bombConfig.levels[u.id] = Math.min(UPGRADE_MAX_LEVEL[u.id], game.bombConfig.levels[u.id]+1);
       AudioEngine.tick();
       saveGame();
       setTimeout(afterLevelUpPick, 220);
