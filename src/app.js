@@ -1354,6 +1354,7 @@ async function runBlow(){
   resetPlaybackState();
   uiState = 'PLAYBACK';
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = true;
   AudioEngine.ensure();
   const cfg = deriveConfig();
   const result = simulate(run.board, run.bombPos, cfg);
@@ -1423,6 +1424,9 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   gameScreenActive = (id==='screen-game');
+  // CONTINUE/STAGE SELECT depend on save data that can change mid-session
+  // (e.g. starting a fresh campaign), so refresh them on every visit to title.
+  if (id==='screen-title') refreshTitleButtons();
 }
 function drawLegend(){
   const wrap = document.getElementById('howto-objects-list');
@@ -1793,6 +1797,7 @@ function enterStageScreen(){
   document.getElementById('retry-marker-label').hidden = true;
   document.getElementById('tips-toast').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
   refreshDebugPanel();
   armTipsIdleTimer();
   setTimeout(showTutorialIfNeeded, 200);
@@ -1815,6 +1820,7 @@ function retrySameStage(){
   updateBombStatsPanel();
   document.getElementById('direct-hit').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
   showRetryMarker();
   armTipsIdleTimer();
   if (run.stageFailCount >= 2) setTimeout(glowKeyParts, 500);
@@ -1893,6 +1899,7 @@ function startTutorial(){
   document.getElementById('retry-marker-label').hidden = true;
   document.getElementById('tips-toast').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  document.getElementById('btn-game-title').disabled = false;
 }
 function exitTutorial(){
   run.isTutorial = false;
@@ -2043,6 +2050,14 @@ function onBlowClick(){
   clearTimeout(tipsIdleTimer);
   runBlow();
 }
+function goToTitleFromGame(){
+  if (uiState==='PLAYBACK') return;
+  AudioEngine.ensure();
+  resetPlaybackState();
+  clearTimeout(tipsIdleTimer);
+  run.isTutorial = false;
+  showScreen('screen-title');
+}
 function onResultNext(){
   const stage = game.currentStage;
   if (stage >= TOTAL_STAGES) showFinal();
@@ -2108,6 +2123,7 @@ function initApp(){
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
 
   /* -- gameplay -- */
+  document.getElementById('btn-game-title').addEventListener('click', goToTitleFromGame);
   document.getElementById('btn-blow').addEventListener('click', onBlowClick);
   document.getElementById('tutorial-dismiss').addEventListener('click', dismissTutorial);
   canvas.addEventListener('pointerdown', onCanvasPointerDown);
@@ -2141,7 +2157,6 @@ function initApp(){
 
   const loaded = loadGame();
   if (loaded) game = loaded;
-  refreshTitleButtons();
   showScreen('screen-title');
   requestAnimationFrame(draw);
 }

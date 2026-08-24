@@ -167,6 +167,7 @@ html, body {
   padding: 2px 2px 6px;
   border-bottom: 1px solid var(--line);
 }
+.hud-left { display: flex; align-items: center; gap: 8px; }
 .hud-item { display: flex; flex-direction: column; gap: 2px; min-width: 54px; }
 .hud-center { align-items: center; flex: 1; }
 .hud-right { align-items: flex-end; }
@@ -415,6 +416,7 @@ html, body {
   border: 1px solid var(--line); background: var(--surface); color: var(--text-2);
   font-size: 13px; line-height: 1; cursor: pointer;
 }
+.help-btn:disabled { opacity: 0.35; pointer-events: none; }
 #screen-help { padding: 3vh 20px 3vh; gap: 2vh; align-items: center; }
 .help-head { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; max-width: 420px; }
 .help-tabs { display: flex; gap: 6px; width: 100%; }

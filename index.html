@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=4" />
+<link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
 <div id="app">
@@ -155,9 +155,12 @@
   <!-- ===================== GAME ===================== -->
   <section id="screen-game" class="screen">
     <header class="hud">
-      <div class="hud-item">
-        <span class="label">STAGE</span>
-        <span id="hud-stage" class="mono value">01</span>
+      <div class="hud-left">
+        <button id="btn-game-title" class="help-btn" title="タイトルへ戻る">⌂</button>
+        <div class="hud-item">
+          <span class="label">STAGE</span>
+          <span id="hud-stage" class="mono value">01</span>
+        </div>
       </div>
       <div class="hud-item hud-right">
         <button id="btn-help" class="help-btn">？</button>
@@ -296,6 +299,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=4"></script>
+<script src="src/app.js?v=5"></script>
 </body>
 </html>
