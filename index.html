@@ -84,7 +84,7 @@
   <section id="screen-stage-select" class="screen">
     <div class="stgsel-head">
       <span class="label">STAGE SELECT</span>
-      <div class="stgsel-level">Lv.<span id="stgsel-level" class="mono">1</span></div>
+      <div class="stgsel-level">SCORE <span id="stgsel-score" class="mono">0</span></div>
     </div>
     <div class="chapter-tabs" id="chapter-tabs"></div>
     <div class="stage-grid" id="stage-grid"></div>
@@ -97,10 +97,6 @@
       <div class="hud-item">
         <span class="label">STAGE</span>
         <span id="hud-stage" class="mono value">01</span>
-      </div>
-      <div class="hud-item hud-center">
-        <span class="label">LV</span>
-        <span id="hud-level" class="mono value value-lg">1</span>
       </div>
       <div class="hud-item hud-right">
         <button id="btn-help" class="help-btn">？</button>
@@ -159,7 +155,6 @@
     <div class="help-panel" id="help-panel-status">
       <div class="help-row"><span class="label">MISSION</span><span id="help-mission" class="mono"></span></div>
       <div class="help-row"><span class="label">BOMB</span><span id="help-bomb" class="mono"></span></div>
-      <div class="help-row"><span class="label">UPGRADES</span><span id="help-upgrades" class="mono"></span></div>
     </div>
     <div class="help-panel" id="help-panel-objects" hidden></div>
     <div class="help-panel" id="help-panel-tips" hidden>
@@ -205,27 +200,12 @@
         <span id="result-mission-badge" class="mission-badge"></span>
       </div>
       <div class="result-fail-hint" id="result-fail-hint" hidden></div>
-      <div class="result-xp" id="result-xp" hidden>
-        <span class="label">EXP</span>
-        <span id="res-xp-gain" class="mono">+0</span>
-      </div>
     </div>
     <div class="result-actions">
       <button id="btn-result-next" class="btn btn-accent btn-large" disabled>NEXT</button>
       <button id="btn-result-retry" class="btn btn-large">RETRY</button>
       <button id="btn-result-stgsel" class="btn btn-ghost">STAGE SELECT</button>
     </div>
-  </section>
-
-  <!-- ===================== LEVEL UP / UPGRADE ===================== -->
-  <section id="screen-upgrade" class="screen">
-    <div class="upgrade-head">
-      <span class="label" id="upgrade-label">SELECT UPGRADE</span>
-      <h2 class="upgrade-title" id="upgrade-title">爆弾を強化する</h2>
-    </div>
-    <div class="next-stage-preview" id="next-stage-preview"></div>
-    <div id="upgrade-cards" class="upgrade-cards"></div>
-    <button id="btn-upgrade-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
   </section>
 
   <!-- ===================== CAMPAIGN COMPLETE ===================== -->

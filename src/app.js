@@ -23,28 +23,6 @@ const OBJ = {
   WALL:      { hp:Infinity, name:'WALL' },
 };
 
-const UPGRADES = [
-  { id:'RANGE',      name:'RANGE UP',   desc:'爆発範囲 +1' },
-  { id:'SHOCKWAVE',  name:'SHOCKWAVE',  desc:'衝撃波でガラスも破壊' },
-  { id:'BURN',       name:'IGNITION',   desc:'爆発跡に炎が残る' },
-  { id:'CONDUCTIVE', name:'CONDUCTIVE', desc:'バッテリーが常に放電' },
-  { id:'DOUBLETAP',  name:'DOUBLE TAP', desc:'時間差でもう一度爆発' },
-  { id:'FUELX2',     name:'OVERCHARGE', desc:'燃料系の爆発が拡大' },
-];
-// Hard caps on each upgrade's level. Without these, RANGE/OVERCHARGE eventually grow the
-// blast footprint past what an 8x8 board can meaningfully hide a solution in. Measured
-// empirically: even RANGE+1 (radius 3, a 7x7 direct-hit area = 76% of the board) already
-// pushes star1-eligible placements to 60-100% on most stages regardless of board design,
-// since a direct hit that big destroys most filler objects no matter where it lands - no
-// amount of wall-boxing or density tuning can compensate for that. So RANGE is excluded
-// entirely (cap 0); OVERCHARGE is capped at 1 (its effect saturates quickly against chain
-// connectivity rather than raw reach); CONDUCTIVE's cap matches its own dead zone (reach
-// already maxes out at level 2 in the simulation code); SHOCKWAVE/BURN only affect glass
-// breaking / fire duration, not raw destructive footprint, but still measurably loosen
-// things when stacked together with the others, so they stay capped too rather than
-// growing unbounded.
-const UPGRADE_MAX_LEVEL = { RANGE:0, SHOCKWAVE:2, BURN:2, CONDUCTIVE:2, DOUBLETAP:1, FUELX2:1 };
-
 const LEGEND_ITEMS = [
   { type:'BLOCK',     label:'ブロック' },
   { type:'GLASS',      label:'ガラス' },
@@ -261,16 +239,15 @@ function countDestructible(board){
 function cloneBoard(board){ return board.map(row=>row.map(c=>c?{...c}:null)); }
 
 /* ===================== SIMULATION ENGINE ===================== */
-function deriveConfig(levels){
-  return {
-    levels,
-    radius: 2+levels.RANGE,
-    shockwaveLevel: levels.SHOCKWAVE,
-    burnLevel: levels.BURN,
-    conductiveLevel: levels.CONDUCTIVE,
-    doubleTapLevel: levels.DOUBLETAP,
-    fuelRadius: levels.FUELX2>0 ? 2+levels.FUELX2*2 : 2,
-  };
+// The bomb's power is fixed for the whole game - no upgrades. A small direct-hit
+// footprint (3x3 = 9 cells) is the whole point: which cell you pick has to matter a lot,
+// so the same explosion always plays out identically for a given board+placement.
+const BOMB_RADIUS = 1;           // 3x3 = 9 cells direct hit
+const FUEL_GAS_RADIUS = 1;       // secondary FUEL/GAS explosions stay just as small
+const EXPLOSIVE_RADIUS = 2;      // EXPLOSIVE is the one deliberately bigger payoff (5x5)
+const ELECTRIC_REACH = 1;        // battery->metal->explosive discharge reach
+function deriveConfig(){
+  return { radius: BOMB_RADIUS, fuelRadius: FUEL_GAS_RADIUS };
 }
 function orthNeighbors(x,y){ return [{x:x-1,y},{x:x+1,y},{x,y:y-1},{x,y:y+1}]; }
 function inBounds(p){ return p.x>=0 && p.x<COLS && p.y>=0 && p.y<ROWS; }
@@ -301,13 +278,11 @@ function computeBlastCells(board, cx, cy, radius, ringWidth){
   }
   return {strong, weak};
 }
-function igniteAround(fireMap, x, y, level){
-  const duration = 1+level;
+function igniteAround(fireMap, x, y){
   const cells = [{x,y}, ...orthNeighbors(x,y)];
-  if (level>=2) cells.push({x:x-1,y:y-1},{x:x+1,y:y-1},{x:x-1,y:y+1},{x:x+1,y:y+1});
   for (const c of cells){
     if (c.x<0||c.y<0||c.x>=COLS||c.y>=ROWS) continue;
-    fireMap.set(c.x+','+c.y, duration);
+    fireMap.set(c.x+','+c.y, 1);
   }
 }
 function applyGravity(board){
@@ -327,12 +302,15 @@ function applyGravity(board){
   }
   return moves;
 }
-function processElectric(board, seeds, conductiveLevel){
-  const discharges = [], triggeredExplosions = [];
-  const reach = conductiveLevel>=2 ? 2 : 1;
+function processElectric(board, seeds){
+  const discharges = [], triggeredExplosions = [], consumed = [];
+  const reach = ELECTRIC_REACH;
   for (const seed of seeds){
     const startMetals = orthNeighbors(seed.x,seed.y).filter(p=>inBounds(p) && board[p.y][p.x] && board[p.y][p.x].type==='METAL');
-    if (board[seed.y] && board[seed.y][seed.x] && board[seed.y][seed.x].type==='BATTERY') board[seed.y][seed.x]=null;
+    if (board[seed.y] && board[seed.y][seed.x] && board[seed.y][seed.x].type==='BATTERY'){
+      board[seed.y][seed.x]=null;
+      consumed.push({x:seed.x, y:seed.y, type:'BATTERY'});
+    }
     if (startMetals.length===0) continue;
     const metalNetwork = []; const seen = new Set(); const stack=[...startMetals];
     while (stack.length){
@@ -363,10 +341,11 @@ function processElectric(board, seeds, conductiveLevel){
     for (const t of targets){
       if (!board[t.y][t.x]) continue;
       board[t.y][t.x] = null;
-      triggeredExplosions.push({x:t.x, y:t.y, radius: t.type==='EXPLOSIVE' ? 2 : 2});
+      consumed.push({x:t.x, y:t.y, type:t.type});
+      triggeredExplosions.push({x:t.x, y:t.y, radius: t.type==='EXPLOSIVE' ? EXPLOSIVE_RADIUS : FUEL_GAS_RADIUS});
     }
   }
-  return {discharges, triggeredExplosions};
+  return {discharges, triggeredExplosions, consumed};
 }
 function computeScore({destroyRate, chainCount, electricCount, maxSimultaneous, fullClear}){
   let score = Math.round(destroyRate*6000);
@@ -384,11 +363,6 @@ function simulate(initialBoard, bombPos, cfg, opts){
   const steps = [];
   let queue = [{x:bombPos.x, y:bombPos.y, radius:cfg.radius}];
   const delayed = {};
-  for (let i=1;i<=cfg.doubleTapLevel;i++){
-    const dwave = 4*i;
-    delayed[dwave] = delayed[dwave] || [];
-    delayed[dwave].push({x:bombPos.x, y:bombPos.y, radius:cfg.radius});
-  }
   const fireMap = new Map();
   let wave = 0, explosionEventCount = 0, maxSimultaneous = 0, electricCount = 0, totalDestroyed = 0, destroyOrder = 0;
   const destroyedTypes = new Set();
@@ -402,7 +376,7 @@ function simulate(initialBoard, bombPos, cfg, opts){
       const [fx, fy] = key.split(',').map(Number);
       const cell = board[fy] && board[fy][fx];
       if (cell && isExplosiveFamily(cell.type)){
-        const r = cell.type==='EXPLOSIVE' ? 2 : cfg.fuelRadius;
+        const r = cell.type==='EXPLOSIVE' ? EXPLOSIVE_RADIUS : cfg.fuelRadius;
         queue.push({x:fx, y:fy, radius:r});
         fireIgnitions.push({x:fx, y:fy, effect:'ignite'});
         fireMap.delete(key);
@@ -425,23 +399,12 @@ function simulate(initialBoard, bombPos, cfg, opts){
       const chainStart = explosionEventCount + 1;
       explosionEventCount += sources.length;
       const hitCells = [], destroyedList = [], battDirectSeeds = [];
-      const strongMap = new Map(), weakMap = new Map();
+      const strongMap = new Map();
       for (const src of sources){
-        const {strong, weak} = computeBlastCells(board, src.x, src.y, src.radius, cfg.shockwaveLevel);
+        const {strong} = computeBlastCells(board, src.x, src.y, src.radius, 0);
         for (const c of strong) strongMap.set(c.x+','+c.y, c);
-        if (cfg.shockwaveLevel>0) for (const c of weak) weakMap.set(c.x+','+c.y, c);
       }
       let destroyedThisWave = 0;
-      for (const [key,c] of weakMap){
-        if (strongMap.has(key)) continue;
-        const cell = board[c.y][c.x];
-        if (cell && cell.type==='GLASS'){
-          board[c.y][c.x]=null;
-          destroyedList.push({x:c.x,y:c.y,type:'GLASS',order:++destroyOrder});
-          destroyedThisWave++; totalDestroyed++; destroyedTypes.add('GLASS');
-        }
-        if (!fast) hitCells.push({x:c.x,y:c.y,weak:true,type:cell?cell.type:'EMPTY',destroyed: !!(cell&&cell.type==='GLASS')});
-      }
       for (const [key,c] of strongMap){
         const cell = board[c.y][c.x];
         if (!cell){ if (!fast) hitCells.push({x:c.x,y:c.y,type:'EMPTY',destroyed:false}); continue; }
@@ -453,14 +416,14 @@ function simulate(initialBoard, bombPos, cfg, opts){
           destroyedThisWave++; totalDestroyed++; destroyedTypes.add(cell.type);
           if (cell.type==='FUEL'){
             queue.push({x:c.x,y:c.y,radius:cfg.fuelRadius});
-            if (cfg.burnLevel>0) igniteAround(fireMap, c.x, c.y, cfg.burnLevel);
+            igniteAround(fireMap, c.x, c.y);
           } else if (cell.type==='EXPLOSIVE'){
-            queue.push({x:c.x,y:c.y,radius:2});
+            queue.push({x:c.x,y:c.y,radius:EXPLOSIVE_RADIUS});
           } else if (cell.type==='GAS'){
             const dwave = wave+2;
             delayed[dwave] = delayed[dwave] || [];
             delayed[dwave].push({x:c.x,y:c.y,radius:cfg.fuelRadius});
-          } else if (cell.type==='BATTERY' && cfg.conductiveLevel>0){
+          } else if (cell.type==='BATTERY'){
             battDirectSeeds.push({x:c.x,y:c.y});
           }
         }
@@ -470,7 +433,11 @@ function simulate(initialBoard, bombPos, cfg, opts){
       if (!fast) steps.push({kind:'explosion', sources, hits:hitCells, destroyed:destroyedList, chainStart, board:cloneBoard(board)});
 
       if (battDirectSeeds.length){
-        const er = processElectric(board, battDirectSeeds, cfg.conductiveLevel);
+        const er = processElectric(board, battDirectSeeds);
+        for (const c of er.consumed){
+          totalDestroyed++; destroyedTypes.add(c.type);
+          destroyedList.push({x:c.x, y:c.y, type:c.type, order:++destroyOrder});
+        }
         if (er.discharges.length){
           electricCount += er.discharges.length;
           if (!fast) steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
@@ -486,7 +453,10 @@ function simulate(initialBoard, bombPos, cfg, opts){
       if (!fast) steps.push({kind:'gravity', moves, board:cloneBoard(board)});
       const seeds = moves.filter(m => board[m.toY][m.toX] && board[m.toY][m.toX].type==='BATTERY').map(m=>({x:m.toX,y:m.toY}));
       if (seeds.length){
-        const er = processElectric(board, seeds, cfg.conductiveLevel);
+        const er = processElectric(board, seeds);
+        for (const c of er.consumed){
+          totalDestroyed++; destroyedTypes.add(c.type); destroyOrder++;
+        }
         if (er.discharges.length){
           electricCount += er.discharges.length;
           if (!fast) steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
@@ -594,10 +564,14 @@ function clampCountTarget(bestValue, ratio, floor){
   if (bestValue <= 0) return 0;
   return Math.max(Math.min(floor, bestValue), Math.min(Math.round(bestValue*ratio), bestValue));
 }
-function pickMission(stage, search){
+function pickMission(stage, search, rng){
   const tier = missionTierForStage(stage);
   const best = search.best.stats;
-  const ratio = avg(tier.ratio);
+  // Sample within the tier's ratio band instead of always taking its midpoint: since the
+  // best candidate is now (thanks to the full-clear guarantee) reliably ~100% destroy rate
+  // on almost every board, a fixed midpoint ratio would derive the exact same rounded
+  // threshold stage after stage, making otherwise-different boards feel copy-pasted.
+  const ratio = rng ? tier.ratio[0] + rng()*(tier.ratio[1]-tier.ratio[0]) : avg(tier.ratio);
   const metrics = tier.metrics;
 
   if (metrics[0] === 'ELECTRIC_ANY'){
@@ -701,6 +675,101 @@ function buildFallbackBoard(stage, rng, cfg){
   narrowLineOfSight(board, stage, rng, cfg);
   return board;
 }
+// Every stage must have at least one placement that clears the WHOLE board (not just the
+// search's own best-so-far) - otherwise "100%" on the result screen never means a literal
+// full clear. At a 9-cell blast radius, pure random placement almost never happens to be
+// fully connected (measured: <1% of random boards for mid/late stages), so rather than
+// rejection-sampling for it, patch the gap directly: find the best candidate's actual
+// blast coverage, then bridge the shortest path from that coverage to whatever object it
+// missed with FUEL stepping stones (spaced within FUEL_GAS_RADIUS of each other so each
+// one chain-triggers the next), and repeat until nothing is left out of reach.
+// WALL cells split a column into independent gravity segments. An object that ends up
+// "remaining" is reported at its post-simulation (post-gravity) resting position, but
+// bridging a static stepping-stone to THAT coordinate can get silently undone: something
+// higher up in the same segment falls into the very cell we just fixed, after the chain
+// has already finished cascading, and is never revisited. Targeting the topmost object in
+// that same wall-bounded segment instead means it gets hit before gravity ever moves it.
+function topOfWallSegment(board, x, fromY){
+  let top = 0;
+  for (let y=fromY; y>=0; y--){
+    if (board[y][x] && board[y][x].type==='WALL'){ top = y+1; break; }
+  }
+  for (let y=top; y<=fromY; y++){
+    if (board[y][x] && board[y][x].type!=='WALL') return {x, y};
+  }
+  return {x, y:fromY};
+}
+function clearWallSegment(board, x, fromY){
+  let top = 0;
+  for (let y=fromY; y>=0; y--){
+    if (board[y][x] && board[y][x].type==='WALL'){ top = y+1; break; }
+  }
+  let bottom = ROWS-1;
+  for (let y=fromY; y<ROWS; y++){
+    if (board[y][x] && board[y][x].type==='WALL'){ bottom = y-1; break; }
+  }
+  for (let y=top; y<=bottom; y++){
+    if (board[y][x] && board[y][x].type!=='WALL') board[y][x] = null;
+  }
+}
+// Repair the CANDIDATE closest to a full clear already (highest destroyCount), not
+// exhaustiveSearch's own "best" (picked by score) - the two can differ, and bridging
+// toward the wrong one wastes iterations while never actually satisfying the
+// "some placement reaches exactly 100%" requirement the caller checks for.
+function closestToFullClear(search){
+  let target = search.results[0];
+  for (const r of search.results) if (r.stats.destroyCount > target.stats.destroyCount) target = r;
+  return target;
+}
+function ensureFullClearReachable(board, cfg){
+  const BRIDGE_BUDGET = 40;
+  const TOTAL_BUDGET = 80;
+  let guard = TOTAL_BUDGET;
+  while (guard-- > 0){
+    const search = exhaustiveSearch(board, cfg);
+    if (!search.best) return;
+    if (search.results.some(r => r.stats.fullClear)) return;
+    const target = closestToFullClear(search);
+    const pos = {x:target.x, y:target.y};
+    // exhaustiveSearch runs in fast mode, which never populates remainingObjects/steps -
+    // get an accurate remaining-object list by re-simulating this candidate in full.
+    // WALL is intentionally indestructible and already excluded from fullClear's own
+    // totalDestructible count, so exclude it here too - otherwise the "closest orphan"
+    // search can spend every iteration chasing decorative walls instead of the actual
+    // stragglers blocking full clear.
+    const full = simulate(board, pos, cfg, {fast:false});
+    const remaining = (full.stats.remainingObjects||[]).filter(o => o.type !== 'WALL');
+    if (!remaining.length) return; // shouldn't happen given fullClear was false, but be safe
+    if (guard >= TOTAL_BUDGET-BRIDGE_BUDGET){
+      let orphan = remaining[0], bestDist = Infinity;
+      for (const o of remaining){
+        const d = Math.max(Math.abs(o.x-pos.x), Math.abs(o.y-pos.y));
+        if (d < bestDist){ bestDist = d; orphan = o; }
+      }
+      const bridgeTo = topOfWallSegment(board, orphan.x, orphan.y);
+      const dx = bridgeTo.x-pos.x, dy = bridgeTo.y-pos.y;
+      const dist = Math.max(Math.abs(dx), Math.abs(dy));
+      const hops = Math.max(1, Math.ceil(dist/FUEL_GAS_RADIUS));
+      for (let i=1; i<=hops; i++){
+        const t = i/hops;
+        const x = Math.round(pos.x+dx*t), y = Math.round(pos.y+dy*t);
+        if (x<0||y<0||x>=COLS||y>=ROWS) continue;
+        board[y][x] = makeCell('FUEL');
+      }
+    } else {
+      // Bridging budget spent: some WALL/gravity configurations can keep producing new
+      // stragglers faster than they get bridged. Guarantee forward progress instead by
+      // deleting every remaining object outright - this strictly shrinks the board each
+      // pass, so it always terminates. `remaining` reports each object's post-simulation
+      // (post-gravity) resting position, which the STATIC board may not even have
+      // anything at (it fell there from higher up) - deleting there would be a no-op, so
+      // delete the topmost object in that same wall-bounded column segment instead, same
+      // as the bridge phase does. The promise that some placement reaches exactly 100%
+      // must never fail, even at the cost of a few decorative objects on a rare board.
+      for (const o of remaining) clearWallSegment(board, o.x, o.y);
+    }
+  }
+}
 const MAX_GENERATION_ATTEMPTS = 50;
 function generateStage(stage, cfg, runSeed){
   const attempts = [];
@@ -709,9 +778,10 @@ function generateStage(stage, cfg, runSeed){
     const seed = hashSeed(runSeed+'|stage'+stage+'|attempt'+i);
     const rng = mulberry32(seed);
     const board = generateBoardRaw(stage, rng, cfg);
+    ensureFullClearReachable(board, cfg);
     const search = exhaustiveSearch(board, cfg);
     if (!search.best){ attempts.push({seed, ok:false, reason:'空きマスなし'}); continue; }
-    const mission = pickMission(stage, search);
+    const mission = pickMission(stage, search, rng);
     const quality = evaluateBoardQuality(stage, search, mission);
     attempts.push({ seed, ok:quality.ok, reason:quality.reason||'OK', solveCount:quality.solveCount, solveRatio:quality.solveRatio, best:search.best.stats.score, median:search.median });
     if (quality.ok){
@@ -723,8 +793,9 @@ function generateStage(stage, cfg, runSeed){
     const seed = hashSeed(runSeed+'|stage'+stage+'|fallback');
     const rng = mulberry32(seed);
     const board = buildFallbackBoard(stage, rng, cfg);
+    ensureFullClearReachable(board, cfg);
     const search = exhaustiveSearch(board, cfg);
-    const mission = pickMission(stage, search);
+    const mission = pickMission(stage, search, rng);
     const quality = evaluateBoardQuality(stage, search, mission);
     chosen = { board, mission, search, seed, attemptIndex: MAX_GENERATION_ATTEMPTS, fallback:true, bestSolving: quality.bestSolving || search.best };
   }
@@ -807,7 +878,6 @@ const run = {
   board: null, bombPos: null,
   mission: null, search: null, genDebug: null,
   stageFailCount: 0, lastAttempt: null, tipsHintArea: null,
-  pendingLevelUp: false, pendingXp: 0,
 };
 
 function resizeCanvas(){
@@ -960,7 +1030,7 @@ function drawBombMarker(ctx, x, y, now){
   ctx.restore();
 }
 function drawBlastPreview(ctx, x, y){
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   ctx.save();
   ctx.strokeStyle = COLOR.text2;
   ctx.lineWidth = 1;
@@ -968,11 +1038,6 @@ function drawBlastPreview(ctx, x, y){
   ctx.globalAlpha = 0.4;
   const r = cfg.radius;
   ctx.strokeRect((x-r)*cellPx+0.5, (y-r)*cellPx+0.5, (2*r+1)*cellPx, (2*r+1)*cellPx);
-  if (cfg.shockwaveLevel > 0){
-    const r2 = r + cfg.shockwaveLevel;
-    ctx.globalAlpha = 0.2;
-    ctx.strokeRect((x-r2)*cellPx+0.5, (y-r2)*cellPx+0.5, (2*r2+1)*cellPx, (2*r2+1)*cellPx);
-  }
   ctx.setLineDash([]);
   ctx.restore();
 }
@@ -1224,7 +1289,7 @@ async function runBlow(){
   uiState = 'PLAYBACK';
   document.getElementById('btn-blow').disabled = true;
   AudioEngine.ensure();
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   const result = simulate(run.board, run.bombPos, cfg);
   await playSteps(result.steps);
   currentBoard = result.finalBoard;
@@ -1235,20 +1300,18 @@ async function runBlow(){
 }
 
 /* ===================== SAVE / CAMPAIGN STATE ===================== */
-const SAVE_VERSION = 1;
+// v2: dropped the whole bomb-upgrade/XP/level system - the bomb's power is fixed for
+// every stage, so old saves (which carried playerLevel/experience/bombConfig.levels)
+// are treated as incompatible and the player starts a fresh campaign.
+const SAVE_VERSION = 2;
 const SAVE_KEY = 'oneexplosion_save_v1';
 const CHAPTER_SIZE = 10;
 const CHAPTER_COUNT = TOTAL_STAGES / CHAPTER_SIZE;
-function defaultBombLevels(){ return {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0}; }
 function freshGameState(){
   return {
     saveVersion: SAVE_VERSION,
     currentStage: 1,
     unlockedStage: 1,
-    playerLevel: 1,
-    experience: 0,
-    bombConfig: { levels: defaultBombLevels() },
-    upgradeSlots: 3,
     stageProgress: {},
     discoveredObjects: ['BLOCK'],
     seenTutorials: [],
@@ -1274,10 +1337,6 @@ function loadGame(){
       saveVersion: SAVE_VERSION,
       currentStage: data.currentStage || 1,
       unlockedStage: data.unlockedStage || 1,
-      playerLevel: data.playerLevel || 1,
-      experience: data.experience || 0,
-      bombConfig: (data.bombConfig && data.bombConfig.levels) ? data.bombConfig : { levels: defaultBombLevels() },
-      upgradeSlots: data.upgradeSlots || 3,
       stageProgress: (data.stageProgress && typeof data.stageProgress==='object') ? data.stageProgress : {},
       discoveredObjects: Array.isArray(data.discoveredObjects) ? data.discoveredObjects : ['BLOCK'],
       seenTutorials: Array.isArray(data.seenTutorials) ? data.seenTutorials : [],
@@ -1292,40 +1351,6 @@ function loadGame(){
   }
 }
 let game = freshGameState();
-
-/* ---- XP / leveling ---- */
-function xpForLevel(level){ return 70 + level*35; }
-function xpReward(stars, missionCleared){
-  let xp = 0;
-  if (stars >= 1) xp += 25;
-  if (stars >= 2) xp += 15;
-  if (stars >= 3) xp += 20;
-  if (missionCleared) xp += 30;
-  return xp;
-}
-function applyXp(amount){
-  game.experience += amount;
-  let leveledUp = false;
-  while (game.experience >= xpForLevel(game.playerLevel)){
-    game.experience -= xpForLevel(game.playerLevel);
-    game.playerLevel++;
-    leveledUp = true;
-  }
-  return leveledUp;
-}
-function upgradeNumericDesc(id, level){
-  const cfg = deriveConfig(Object.assign(defaultBombLevels(), {[id]: level}));
-  const cfgNext = deriveConfig(Object.assign(defaultBombLevels(), {[id]: level+1}));
-  switch (id){
-    case 'RANGE': return `爆発範囲 RANGE ${cfg.radius} → ${cfgNext.radius}`;
-    case 'FUELX2': return `燃料・ガスの爆発範囲 ${cfg.fuelRadius} → ${cfgNext.fuelRadius}`;
-    case 'DOUBLETAP': return `爆発回数 ${level+1}回 → ${level+2}回`;
-    case 'CONDUCTIVE': return level===0 ? '被弾した電池も放電するようになる' : `感電の到達距離 ${cfg.conductiveLevel} → ${cfgNext.conductiveLevel}`;
-    case 'SHOCKWAVE': return `衝撃波の追加範囲 +${level} → +${level+1}`;
-    case 'BURN': return `炎の持続 ${1+level}ターン → ${1+level+1}ターン`;
-    default: return '';
-  }
-}
 
 /* ===================== UI / SCREEN FLOW ===================== */
 function showScreen(id){
@@ -1369,20 +1394,13 @@ function refreshLegendDiscovery(){
 function pad2(n){ return String(n).padStart(2,'0'); }
 function refreshHUD(){
   document.getElementById('hud-stage').textContent = pad2(game.currentStage);
-  document.getElementById('hud-level').textContent = game.playerLevel;
 }
 function updateMissionBanner(){
   document.getElementById('mission-text').textContent = run.mission ? run.mission.label : '';
 }
 function updateBombStatsPanel(){
-  const cfg = deriveConfig(game.bombConfig.levels);
-  let html = `<span class="chip">RANGE <b>${cfg.radius}</b></span>`;
-  if (cfg.shockwaveLevel) html += `<span class="chip">SHOCK <b>${cfg.shockwaveLevel}</b></span>`;
-  if (cfg.burnLevel) html += `<span class="chip">BURN <b>${cfg.burnLevel}</b></span>`;
-  if (cfg.conductiveLevel) html += `<span class="chip">ELEC <b>${cfg.conductiveLevel}</b></span>`;
-  if (cfg.doubleTapLevel) html += `<span class="chip">TAP <b>${cfg.doubleTapLevel+1}×</b></span>`;
-  if (game.bombConfig.levels.FUELX2) html += `<span class="chip">FUEL <b>${game.bombConfig.levels.FUELX2}</b></span>`;
-  document.getElementById('bomb-stats').innerHTML = html;
+  const cfg = deriveConfig();
+  document.getElementById('bomb-stats').innerHTML = `<span class="chip">RANGE <b>${cfg.radius}</b></span>`;
 }
 function animateCount(el, target, dur){
   const start = performance.now();
@@ -1399,7 +1417,7 @@ function animateCount(el, target, dur){
 function analyzeStopReason(remainingObjects, cfg, eventLog){
   const battery = remainingObjects.filter(o=>o.type==='BATTERY');
   const metal = remainingObjects.filter(o=>o.type==='METAL');
-  const reach = cfg.conductiveLevel>=2 ? 2 : 1;
+  const reach = ELECTRIC_REACH;
   let bestDist = Infinity;
   let farBattery = null;
   for (const b of battery) for (const m of metal){
@@ -1432,7 +1450,7 @@ function showResult(stats, eventLog){
   const stage = game.currentStage;
   const key = String(stage);
   const progress = game.stageProgress[key];
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   const maxDestroy = run.search ? run.search.maxDestroyCount : stats.destroyCount;
   const rate = explosionRateFor(stats.destroyCount, maxDestroy);
   const stars = starsForRate(rate);
@@ -1447,13 +1465,7 @@ function showResult(stats, eventLog){
 
   game.totalScore += stats.score;
   if (stats.chainCount > game.bestChain) game.bestChain = stats.chainCount;
-
-  let xpGain = 0, leveledUp = false;
-  if (stars >= 1){
-    xpGain = xpReward(stars, missionEval.ok);
-    leveledUp = applyXp(xpGain);
-    if (stage < TOTAL_STAGES && game.unlockedStage < stage+1) game.unlockedStage = stage+1;
-  }
+  if (stars >= 1 && stage < TOTAL_STAGES && game.unlockedStage < stage+1) game.unlockedStage = stage+1;
 
   const stopReason = stars < 1 ? analyzeStopReason(stats.remainingObjects||[], cfg, eventLog) : null;
   if (stars < 1){
@@ -1465,8 +1477,6 @@ function showResult(stats, eventLog){
     remainingObjects: stats.remainingObjects||[], missedArea: stopReason ? stopReason.area : null,
   };
   progress.lastAttempt = run.lastAttempt;
-  run.pendingLevelUp = leveledUp;
-  run.pendingXp = xpGain;
 
   saveGame();
 
@@ -1497,66 +1507,10 @@ function showResult(stats, eventLog){
     hintEl.hidden = true;
   }
 
-  const xpEl = document.getElementById('result-xp');
-  if (xpGain > 0){ document.getElementById('res-xp-gain').textContent = '+'+xpGain; xpEl.hidden = false; }
-  else xpEl.hidden = true;
-
   document.getElementById('btn-result-next').disabled = !cleared;
   refreshHUD();
   refreshDebugPanel();
 }
-function shuffle(arr){
-  const a = arr.slice();
-  for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-  return a;
-}
-function showLevelUp(){
-  showScreen('screen-upgrade');
-  document.getElementById('upgrade-label').textContent = 'LEVEL UP';
-  document.getElementById('upgrade-title').textContent = `Lv.${game.playerLevel-1} → Lv.${game.playerLevel}`;
-  const nextStage = game.currentStage + 1;
-  const previewEl = document.getElementById('next-stage-preview');
-  if (nextStage <= TOTAL_STAGES){
-    const nextProgress = peekStage(nextStage);
-    const objs = flattenBoardTypes(nextProgress.boardData).map(t => PART_INFO[t].name).join(' / ');
-    previewEl.innerHTML = `NEXT STAGE ${pad2(nextStage)}<br>MISSION <b>${nextProgress.mission.label}</b><br>OBJECTS <b>${objs}</b>`;
-  } else {
-    previewEl.innerHTML = 'FINAL STAGE CLEARED';
-  }
-  const available = UPGRADES.filter(u => game.bombConfig.levels[u.id] < UPGRADE_MAX_LEVEL[u.id]);
-  const pool = shuffle(available).slice(0,3);
-  const wrap = document.getElementById('upgrade-cards');
-  wrap.innerHTML = '';
-  if (!pool.length){
-    // every power upgrade is already capped - nothing meaningful to offer, so don't
-    // block progress on an empty choice screen.
-    afterLevelUpPick();
-    return;
-  }
-  document.getElementById('btn-upgrade-continue').hidden = true;
-  for (const u of pool){
-    const lvl = game.bombConfig.levels[u.id];
-    const card = document.createElement('div');
-    card.className = 'upgrade-card';
-    card.innerHTML = `<div class="u-name">${u.name}</div><div class="u-desc">${upgradeNumericDesc(u.id, lvl)}</div>${lvl>0?`<div class="u-lv">LV.${lvl+1}</div>`:''}`;
-    card.addEventListener('click', () => {
-      if (card.dataset.picked) return;
-      card.dataset.picked = '1';
-      card.classList.add('selected');
-      game.bombConfig.levels[u.id] = Math.min(UPGRADE_MAX_LEVEL[u.id], game.bombConfig.levels[u.id]+1);
-      AudioEngine.tick();
-      saveGame();
-      setTimeout(afterLevelUpPick, 220);
-    });
-    wrap.appendChild(card);
-  }
-}
-function afterLevelUpPick(){
-  const stage = game.currentStage;
-  if (stage >= TOTAL_STAGES) showFinal();
-  else goToStage(stage+1);
-}
-
 /* ---- new-object tutorial ---- */
 let tutorialQueue = [];
 let currentTutorialType = null;
@@ -1648,7 +1602,7 @@ function dismissTips(){
 function glowKeyParts(){
   const best = run.search && (run.search.bestSolving || run.search.best);
   if (!best) return;
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   const full = simulate(run.board, {x:best.x, y:best.y}, cfg);
   const keyTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
   for (const step of full.steps){
@@ -1675,7 +1629,6 @@ function refreshDebugPanel(){
   lines.push(`star1=${star1Count}/${run.search.empties}   missionSolve=${solveCount}/${run.search.empties}`);
   lines.push(`top-score cell=(${run.search.best.x},${run.search.best.y})`);
   if (run.search.bestSolving) lines.push(`best solving cell=(${run.search.bestSolving.x},${run.search.bestSolving.y}) score=${run.search.bestSolving.stats.score}`);
-  lines.push(`Lv.${game.playerLevel} exp=${game.experience}/${xpForLevel(game.playerLevel)}   upgrades: ${JSON.stringify(game.bombConfig.levels)}`);
   lines.push(`stageFailCount=${run.stageFailCount}`);
   lines.push('');
   lines.push('-- attempts (last 12) --');
@@ -1690,7 +1643,7 @@ function peekStage(stageNum){
   const key = String(stageNum);
   let progress = game.stageProgress[key];
   if (!progress){
-    const cfg = deriveConfig(game.bombConfig.levels);
+    const cfg = deriveConfig();
     const chosen = generateStage(stageNum, cfg, game.runSeed);
     progress = {
       stageNumber: stageNum, seed: chosen.seed, boardData: chosen.board, mission: chosen.mission,
@@ -1704,7 +1657,7 @@ function peekStage(stageNum){
   return progress;
 }
 function loadStage(stageNum){
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   const progress = peekStage(stageNum);
   run.board = progress.boardData;
   run.mission = progress.mission;
@@ -1796,7 +1749,7 @@ function showStageSelect(){
   const loaded = loadGame();
   if (loaded) game = loaded;
   showScreen('screen-stage-select');
-  document.getElementById('stgsel-level').textContent = game.playerLevel;
+  document.getElementById('stgsel-score').textContent = game.totalScore.toLocaleString();
   currentChapter = Math.min(CHAPTER_COUNT, Math.max(1, Math.ceil(game.currentStage/CHAPTER_SIZE)));
   renderChapterTabs();
   renderStageGrid();
@@ -1846,11 +1799,8 @@ function showHelp(fromGame){
   document.getElementById('help-panel-objects').hidden = true;
   document.getElementById('help-panel-tips').hidden = true;
   document.getElementById('help-mission').textContent = run.mission ? run.mission.label : '—';
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   document.getElementById('help-bomb').textContent = `RANGE ${cfg.radius}`;
-  const activeUpgrades = UPGRADES.filter(u => game.bombConfig.levels[u.id] > 0)
-    .map(u => `${u.name} Lv.${game.bombConfig.levels[u.id]}`).join(' / ') || 'なし';
-  document.getElementById('help-upgrades').textContent = activeUpgrades;
   const objWrap = document.getElementById('help-panel-objects');
   objWrap.innerHTML = '';
   const grid = document.createElement('div');
@@ -1878,7 +1828,7 @@ function hideHelp(){
 function updateDirectHitPreview(){
   const el = document.getElementById('direct-hit');
   if (!run.bombPos){ el.hidden = true; return; }
-  const cfg = deriveConfig(game.bombConfig.levels);
+  const cfg = deriveConfig();
   const { strong } = computeBlastCells(run.board, run.bombPos.x, run.bombPos.y, cfg.radius, 0);
   const counts = {};
   for (const c of strong){
@@ -1913,7 +1863,6 @@ function onBlowClick(){
   runBlow();
 }
 function onResultNext(){
-  if (run.pendingLevelUp){ showLevelUp(); return; }
   const stage = game.currentStage;
   if (stage >= TOTAL_STAGES) showFinal();
   else goToStage(stage+1);
@@ -1952,8 +1901,6 @@ function initApp(){
   document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); retrySameStage(); });
   document.getElementById('btn-result-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
 
-  /* -- level up -- */
-  document.getElementById('btn-upgrade-continue').addEventListener('click', afterLevelUpPick);
 
   /* -- stage select / help / final -- */
   document.getElementById('btn-stgsel-back').addEventListener('click', () => showScreen('screen-title'));
@@ -1994,6 +1941,7 @@ if (typeof module !== 'undefined' && module.exports) {
     stagePartsFor, stageDifficultyBand, missionTierForStage, stagePartsIntroducedAt,
     isNewPartStage, explosionRateFor, starsForRate, OBJ, TOTAL_STAGES,
     ROWS, COLS, MAX_GENERATION_ATTEMPTS, buildFallbackBoard, countDestructible,
+    BOMB_RADIUS, FUEL_GAS_RADIUS, EXPLOSIVE_RADIUS, ensureFullClearReachable,
   };
 }
 
