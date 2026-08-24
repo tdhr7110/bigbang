@@ -57,15 +57,15 @@
       <div class="tip-row">金属のとなりにバッテリーが落ちると感電し、周囲の爆薬・燃料・ガスへ飛び火する</div>
       <div class="tip-row">壊れない壁は爆風を完全に遮断する。裏側は安全地帯になる</div>
     </div>
-    <div class="legend-grid">
-      <div class="legend-item"><canvas class="legend-icon" data-type="BLOCK" width="72" height="72"></canvas><span>ブロック</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="GLASS" width="72" height="72"></canvas><span>ガラス</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="FUEL" width="72" height="72"></canvas><span>燃料</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="EXPLOSIVE" width="72" height="72"></canvas><span>爆薬</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="BATTERY" width="72" height="72"></canvas><span>電池</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="GAS" width="72" height="72"></canvas><span>ガス</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="METAL" width="72" height="72"></canvas><span>金属</span></div>
-      <div class="legend-item"><canvas class="legend-icon" data-type="WALL" width="72" height="72"></canvas><span>壁</span></div>
+    <div class="legend-grid" id="legend-grid">
+      <div class="legend-item" data-part="BLOCK"><canvas class="legend-icon" data-type="BLOCK" width="72" height="72"></canvas><span class="legend-name">ブロック</span></div>
+      <div class="legend-item" data-part="GLASS"><canvas class="legend-icon" data-type="GLASS" width="72" height="72"></canvas><span class="legend-name">ガラス</span></div>
+      <div class="legend-item" data-part="FUEL"><canvas class="legend-icon" data-type="FUEL" width="72" height="72"></canvas><span class="legend-name">燃料</span></div>
+      <div class="legend-item" data-part="EXPLOSIVE"><canvas class="legend-icon" data-type="EXPLOSIVE" width="72" height="72"></canvas><span class="legend-name">爆薬</span></div>
+      <div class="legend-item" data-part="BATTERY"><canvas class="legend-icon" data-type="BATTERY" width="72" height="72"></canvas><span class="legend-name">電池</span></div>
+      <div class="legend-item" data-part="GAS"><canvas class="legend-icon" data-type="GAS" width="72" height="72"></canvas><span class="legend-name">ガス</span></div>
+      <div class="legend-item" data-part="METAL"><canvas class="legend-icon" data-type="METAL" width="72" height="72"></canvas><span class="legend-name">金属</span></div>
+      <div class="legend-item" data-part="WALL"><canvas class="legend-icon" data-type="WALL" width="72" height="72"></canvas><span class="legend-name">壁</span></div>
     </div>
     <button id="btn-howto-back" class="btn btn-large">BACK</button>
   </section>
@@ -87,9 +87,22 @@
       </div>
     </header>
 
+    <div class="mission-banner" id="mission-banner">
+      <span class="label">MISSION</span>
+      <span id="mission-text" class="mission-text"></span>
+    </div>
+
     <div class="board-wrap">
       <canvas id="board-canvas" width="640" height="640"></canvas>
       <div id="chain-popup" class="chain-popup"></div>
+      <div class="tutorial-overlay" id="tutorial-overlay" hidden>
+        <div class="tutorial-card">
+          <span class="label">NEW OBJECT</span>
+          <div class="tutorial-name mono" id="tutorial-name"></div>
+          <div class="tutorial-desc" id="tutorial-desc"></div>
+          <button id="tutorial-dismiss" class="btn btn-accent">OK</button>
+        </div>
+      </div>
     </div>
 
     <footer class="control">
@@ -106,7 +119,8 @@
   <!-- ===================== RESULT ===================== -->
   <section id="screen-result" class="screen">
     <div class="result-wrap">
-      <div class="result-label">STAGE CLEAR</div>
+      <div class="result-label" id="result-status">MISSION COMPLETE</div>
+      <div class="result-mission mono" id="result-mission-line"></div>
       <div class="result-main">
         <div class="result-row result-destroy">
           <span class="result-num mono" id="res-destroy">0%</span>
@@ -131,12 +145,14 @@
           <span id="res-fullclear" class="mono">—</span>
         </div>
       </div>
+      <div class="result-fail-hint" id="result-fail-hint" hidden></div>
       <div class="result-total">
         <span class="label">TOTAL</span>
         <span id="res-total" class="mono value-xl">0</span>
       </div>
     </div>
     <button id="btn-result-next" class="btn btn-accent btn-large">NEXT</button>
+    <button id="btn-result-retry" class="btn btn-danger btn-large" hidden>RETRY</button>
   </section>
 
   <!-- ===================== UPGRADE ===================== -->
@@ -166,6 +182,8 @@
     </div>
     <button id="btn-retry" class="btn btn-accent btn-large">RETRY</button>
   </section>
+
+  <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
 <script src="src/app.js"></script>

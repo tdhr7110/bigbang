@@ -44,75 +44,142 @@ const LEGEND_ITEMS = [
   { type:'WALL',       label:'壁' },
 ];
 
+const PART_INFO = {
+  BLOCK:     { name:'BLOCK',        desc:'爆風で壊れる、ただのがれき' },
+  FUEL:      { name:'FUEL TANK',    desc:'壊れると爆発し、周囲を巻き込む' },
+  EXPLOSIVE: { name:'EXPLOSIVE',    desc:'壊れると爆発し、連鎖の起点になる' },
+  GAS:       { name:'GAS CANISTER',desc:'少し遅れて爆発し、離れた場所へ連鎖を伸ばす' },
+  GLASS:     { name:'GLASS',        desc:'脆く、弱い衝撃波でも割れる' },
+  WALL:      { name:'WALL',         desc:'壊れず、爆風を完全に遮断する' },
+  BATTERY:   { name:'BATTERY',      desc:'落下して金属に触れると周囲へ電撃が連鎖する' },
+  METAL:     { name:'METAL',        desc:'頑丈で電気を通す。電池と組み合わせると危険' },
+};
+
+const STAGE_PARTS = {
+  1: ['BLOCK','FUEL','EXPLOSIVE'],
+  2: ['BLOCK','FUEL','EXPLOSIVE','GAS'],
+  3: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS'],
+  4: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL'],
+  5: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
+  6: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
+  7: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
+  8: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
+};
+function stagePartsFor(stage){ return STAGE_PARTS[Math.min(8,Math.max(1,stage))]; }
+
+// solveMin/solveMax: fraction of empty cells that should satisfy the stage mission.
+// targetRatio: mission threshold as [min,max] fraction of the best possible result.
+const STAGE_DIFFICULTY = {
+  1: { solveMin:0.25, solveMax:0.55, targetRatio:[0.60,0.70], metric:'DESTROY' },
+  2: { solveMin:0.18, solveMax:0.40, targetRatio:[0.70,0.75], metric:'CHAIN' },
+  3: { solveMin:0.14, solveMax:0.30, targetRatio:[0.75,0.80], metric:'CHAIN' },
+  4: { solveMin:0.09, solveMax:0.25, targetRatio:[0.80,0.85], metric:'DESTROY' },
+  5: { solveMin:0.06, solveMax:0.20, targetRatio:[1,1],       metric:'ELECTRIC_ANY' },
+  6: { solveMin:0.05, solveMax:0.16, targetRatio:[0.85,0.90], metric:'CHAIN' },
+  7: { solveMin:0.03, solveMax:0.12, targetRatio:[0.85,0.92], metric:'COMPOUND' },
+  8: { solveMin:0.01, solveMax:0.06, targetRatio:[0.90,0.95], metric:'COMPOUND' },
+};
+function stageDifficulty(stage){ return STAGE_DIFFICULTY[Math.min(8,Math.max(1,stage))]; }
+
 function isExplosiveFamily(t){ return t==='FUEL'||t==='EXPLOSIVE'||t==='GAS'; }
+
+/* ===================== SEEDED RNG ===================== */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashSeed(str){
+  let h = 1779033703 ^ str.length;
+  for (let i=0;i<str.length;i++){
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^ (h >>> 16)) >>> 0);
+}
 
 /* ===================== BOARD GENERATION ===================== */
 function stageWeights(n){
+  const parts = stagePartsFor(n);
+  const has = (t) => parts.includes(t);
   const t = (n-1)/7;
   const lerp = (a,b) => a+(b-a)*t;
-  return {
-    EMPTY: lerp(0.30,0.20), BLOCK: lerp(0.28,0.14), GLASS: lerp(0.10,0.09),
-    FUEL: lerp(0.07,0.13), EXPLOSIVE: lerp(0.07,0.15), BATTERY: lerp(0.06,0.09),
-    GAS: lerp(0.04,0.09), METAL: lerp(0.05,0.08), WALL: lerp(0.03,0.03),
-  };
+  const w = { EMPTY: lerp(0.30,0.20), BLOCK: lerp(0.28,0.14) };
+  if (has('GLASS'))     w.GLASS = lerp(0.10,0.09);
+  if (has('FUEL'))      w.FUEL = lerp(0.07,0.13);
+  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.07,0.15);
+  if (has('BATTERY'))   w.BATTERY = lerp(0.06,0.09);
+  if (has('GAS'))       w.GAS = lerp(0.04,0.09);
+  if (has('METAL'))     w.METAL = lerp(0.05,0.08);
+  if (has('WALL'))      w.WALL = lerp(0.03,0.03);
+  return w;
 }
-function weightedPick(weights){
+function weightedPick(weights, rng){
   const entries = Object.entries(weights);
   const total = entries.reduce((s,[,w])=>s+w,0);
-  let r = Math.random()*total;
+  let r = rng()*total;
   for (const [k,w] of entries){ if (r<w) return k; r-=w; }
   return entries[entries.length-1][0];
 }
 function makeCell(type){ return { type, hp: OBJ[type].hp }; }
 function forEachCell(board, fn){ for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) fn(board[y][x],x,y); }
-function randomConvertibleCell(board){
+function randomConvertibleCell(board, rng){
   const cand = [];
   forEachCell(board,(c,x,y)=>{ if (c && (c.type==='BLOCK'||c.type==='GLASS')) cand.push({x,y}); });
   if (!cand.length) return null;
-  return cand[Math.floor(Math.random()*cand.length)];
+  return cand[Math.floor(rng()*cand.length)];
 }
-function ensureMinEmpty(board, n){
+function ensureMinEmpty(board, n, rng){
   let count = 0;
   forEachCell(board,(c)=>{ if(!c) count++; });
   while (count < n){
-    const p = randomConvertibleCell(board);
+    const p = randomConvertibleCell(board, rng);
     if (!p) break;
     board[p.y][p.x] = null;
     count++;
   }
 }
-function ensureMinCount(board, types, n){
+function ensureMinCount(board, types, n, rng){
   let count = 0;
   forEachCell(board,(c)=>{ if (c && types.includes(c.type)) count++; });
   let guard = 200;
   while (count < n && guard-- > 0){
-    const p = randomConvertibleCell(board);
+    const p = randomConvertibleCell(board, rng);
     if (!p) break;
-    const type = types[Math.floor(Math.random()*types.length)];
+    const type = types[Math.floor(rng()*types.length)];
     board[p.y][p.x] = makeCell(type);
     count++;
   }
 }
-function ensureMetalBatteryPair(board){
+function ensureMetalBatteryPair(board, rng){
   let hasMetal=false, hasBattery=false;
   forEachCell(board,(c)=>{ if(c){ if(c.type==='METAL')hasMetal=true; if(c.type==='BATTERY')hasBattery=true; } });
-  if (!hasMetal){ const p=randomConvertibleCell(board); if(p) board[p.y][p.x]=makeCell('METAL'); }
-  if (!hasBattery){ const p=randomConvertibleCell(board); if(p) board[p.y][p.x]=makeCell('BATTERY'); }
+  if (!hasMetal){ const p=randomConvertibleCell(board, rng); if(p) board[p.y][p.x]=makeCell('METAL'); }
+  if (!hasBattery){ const p=randomConvertibleCell(board, rng); if(p) board[p.y][p.x]=makeCell('BATTERY'); }
 }
-function generateBoard(stageIndex){
+function generateBoardRaw(stageIndex, rng){
   const weights = stageWeights(stageIndex);
   const board = [];
   for (let y=0;y<ROWS;y++){
     const row = [];
     for (let x=0;x<COLS;x++){
-      const type = weightedPick(weights);
+      const type = weightedPick(weights, rng);
       row.push(type==='EMPTY' ? null : makeCell(type));
     }
     board.push(row);
   }
-  ensureMinEmpty(board, 6);
-  ensureMinCount(board, ['FUEL','EXPLOSIVE','GAS'], 2+Math.floor(stageIndex/2));
-  if (stageIndex >= 2) ensureMetalBatteryPair(board);
+  ensureMinEmpty(board, 6, rng);
+  const parts = stagePartsFor(stageIndex);
+  const explosiveFamily = ['FUEL','EXPLOSIVE'].filter(t=>parts.includes(t));
+  if (parts.includes('GAS')) explosiveFamily.push('GAS');
+  ensureMinCount(board, explosiveFamily, 2+Math.floor(stageIndex/2), rng);
+  if (parts.includes('BATTERY') && parts.includes('METAL')) ensureMetalBatteryPair(board, rng);
   return board;
 }
 function countDestructible(board){
@@ -239,7 +306,8 @@ function computeScore({destroyRate, chainCount, electricCount, maxSimultaneous, 
   return Math.round(score);
 }
 
-function simulate(initialBoard, bombPos, cfg){
+function simulate(initialBoard, bombPos, cfg, opts){
+  const fast = !!(opts && opts.fast);
   const board = cloneBoard(initialBoard);
   const totalDestructible = countDestructible(board);
   const steps = [];
@@ -251,7 +319,8 @@ function simulate(initialBoard, bombPos, cfg){
     delayed[dwave].push({x:bombPos.x, y:bombPos.y, radius:cfg.radius});
   }
   const fireMap = new Map();
-  let wave = 0, explosionEventCount = 0, maxSimultaneous = 0, electricCount = 0, totalDestroyed = 0;
+  let wave = 0, explosionEventCount = 0, maxSimultaneous = 0, electricCount = 0, totalDestroyed = 0, destroyOrder = 0;
+  const destroyedTypes = new Set();
   const MAX_WAVES = 90;
 
   while (wave < MAX_WAVES){
@@ -270,7 +339,7 @@ function simulate(initialBoard, bombPos, cfg){
       }
       if (cell && cell.type==='GLASS'){
         board[fy][fx] = null;
-        totalDestroyed++;
+        totalDestroyed++; destroyedTypes.add('GLASS');
         fireIgnitions.push({x:fx, y:fy, effect:'shatter'});
         fireMap.delete(key);
         continue;
@@ -278,10 +347,11 @@ function simulate(initialBoard, bombPos, cfg){
       const nt = turns-1;
       if (nt<=0) fireMap.delete(key); else fireMap.set(key, nt);
     }
-    if (fireIgnitions.length) steps.push({kind:'fire', cells:fireIgnitions, board:cloneBoard(board)});
+    if (!fast && fireIgnitions.length) steps.push({kind:'fire', cells:fireIgnitions, board:cloneBoard(board)});
 
     if (queue.length > 0){
       const sources = queue; queue = [];
+      const chainStart = explosionEventCount + 1;
       explosionEventCount += sources.length;
       const hitCells = [], destroyedList = [], battDirectSeeds = [];
       const strongMap = new Map(), weakMap = new Map();
@@ -296,20 +366,20 @@ function simulate(initialBoard, bombPos, cfg){
         const cell = board[c.y][c.x];
         if (cell && cell.type==='GLASS'){
           board[c.y][c.x]=null;
-          destroyedList.push({x:c.x,y:c.y,type:'GLASS'});
-          destroyedThisWave++; totalDestroyed++;
+          destroyedList.push({x:c.x,y:c.y,type:'GLASS',order:++destroyOrder});
+          destroyedThisWave++; totalDestroyed++; destroyedTypes.add('GLASS');
         }
-        hitCells.push({x:c.x,y:c.y,weak:true,type:cell?cell.type:'EMPTY',destroyed: !!(cell&&cell.type==='GLASS')});
+        if (!fast) hitCells.push({x:c.x,y:c.y,weak:true,type:cell?cell.type:'EMPTY',destroyed: !!(cell&&cell.type==='GLASS')});
       }
       for (const [key,c] of strongMap){
         const cell = board[c.y][c.x];
-        if (!cell){ hitCells.push({x:c.x,y:c.y,type:'EMPTY',destroyed:false}); continue; }
-        if (cell.type==='WALL'){ hitCells.push({x:c.x,y:c.y,type:'WALL',destroyed:false}); continue; }
+        if (!cell){ if (!fast) hitCells.push({x:c.x,y:c.y,type:'EMPTY',destroyed:false}); continue; }
+        if (cell.type==='WALL'){ if (!fast) hitCells.push({x:c.x,y:c.y,type:'WALL',destroyed:false}); continue; }
         cell.hp -= 1;
         if (cell.hp<=0){
           board[c.y][c.x]=null;
-          destroyedList.push({x:c.x,y:c.y,type:cell.type});
-          destroyedThisWave++; totalDestroyed++;
+          destroyedList.push({x:c.x,y:c.y,type:cell.type,order:++destroyOrder});
+          destroyedThisWave++; totalDestroyed++; destroyedTypes.add(cell.type);
           if (cell.type==='FUEL'){
             queue.push({x:c.x,y:c.y,radius:cfg.fuelRadius});
             if (cfg.burnLevel>0) igniteAround(fireMap, c.x, c.y, cfg.burnLevel);
@@ -323,16 +393,16 @@ function simulate(initialBoard, bombPos, cfg){
             battDirectSeeds.push({x:c.x,y:c.y});
           }
         }
-        hitCells.push({x:c.x,y:c.y,type:cell.type,destroyed:cell.hp<=0,hpLeft:Math.max(cell.hp,0)});
+        if (!fast) hitCells.push({x:c.x,y:c.y,type:cell.type,destroyed:cell.hp<=0,hpLeft:Math.max(cell.hp,0)});
       }
       maxSimultaneous = Math.max(maxSimultaneous, destroyedThisWave);
-      steps.push({kind:'explosion', sources, hits:hitCells, destroyed:destroyedList, board:cloneBoard(board)});
+      if (!fast) steps.push({kind:'explosion', sources, hits:hitCells, destroyed:destroyedList, chainStart, board:cloneBoard(board)});
 
       if (battDirectSeeds.length){
         const er = processElectric(board, battDirectSeeds, cfg.conductiveLevel);
         if (er.discharges.length){
           electricCount += er.discharges.length;
-          steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
+          if (!fast) steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
           queue.push(...er.triggeredExplosions);
         }
       }
@@ -342,13 +412,13 @@ function simulate(initialBoard, bombPos, cfg){
 
     const moves = applyGravity(board);
     if (moves.length > 0){
-      steps.push({kind:'gravity', moves, board:cloneBoard(board)});
+      if (!fast) steps.push({kind:'gravity', moves, board:cloneBoard(board)});
       const seeds = moves.filter(m => board[m.toY][m.toX] && board[m.toY][m.toX].type==='BATTERY').map(m=>({x:m.toX,y:m.toY}));
       if (seeds.length){
         const er = processElectric(board, seeds, cfg.conductiveLevel);
         if (er.discharges.length){
           electricCount += er.discharges.length;
-          steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
+          if (!fast) steps.push({kind:'electric', discharges:er.discharges, board:cloneBoard(board)});
           queue.push(...er.triggeredExplosions);
         }
       }
@@ -362,12 +432,179 @@ function simulate(initialBoard, bombPos, cfg){
 
   const destroyRate = totalDestructible ? totalDestroyed/totalDestructible : 0;
   const fullClear = totalDestroyed >= totalDestructible;
+  const score = computeScore({destroyRate, chainCount:explosionEventCount, electricCount, maxSimultaneous, fullClear});
+  const remainingObjects = [];
+  if (!fast) forEachCell(board, (c,x,y)=>{ if (c) remainingObjects.push({x,y,type:c.type}); });
   const stats = {
+    // legacy field names (kept for existing UI code)
     totalDestroyed, totalDestructible, destroyRate,
-    chainCount: explosionEventCount, electricCount, maxSimultaneous, fullClear,
-    score: computeScore({destroyRate, chainCount:explosionEventCount, electricCount, maxSimultaneous, fullClear}),
+    chainCount: explosionEventCount, electricCount, maxSimultaneous, fullClear, score,
+    // spec-required field names
+    destroyCount: totalDestroyed, maxBurst: maxSimultaneous, totalScore: score,
+    remainingObjects, destroyedTypes,
   };
-  return { steps, stats, finalBoard: cloneBoard(board) };
+  return { steps, stats, finalBoard: fast ? null : cloneBoard(board), eventLog: steps };
+}
+
+/* ===================== EXHAUSTIVE SEARCH ===================== */
+function findEmptyCells(board){
+  const cells = [];
+  for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++) if (!board[y][x]) cells.push({x,y});
+  return cells;
+}
+function exhaustiveSearch(board, cfg){
+  const empties = findEmptyCells(board);
+  const results = empties.map(p => {
+    const r = simulate(board, p, cfg, {fast:true});
+    return { x:p.x, y:p.y, stats:r.stats };
+  });
+  const byScore = results.slice().sort((a,b)=>b.stats.score-a.stats.score);
+  const best = byScore[0] || null;
+  const scoresAsc = results.map(r=>r.stats.score).sort((a,b)=>a-b);
+  const median = scoresAsc.length ? scoresAsc[Math.floor((scoresAsc.length-1)/2)] : 0;
+  let centerBaseline = null;
+  if (results.length){
+    let bestD = Infinity;
+    for (const r of results){
+      const d = Math.abs(r.x-3.5)+Math.abs(r.y-3.5);
+      if (d<bestD){ bestD=d; centerBaseline=r; }
+    }
+  }
+  return { empties: empties.length, results, best, median, centerBaseline };
+}
+
+/* ===================== MISSION SYSTEM ===================== */
+function missionPartLabel(m){
+  switch(m.type){
+    case 'DESTROY': return `破壊率${m.threshold}%以上`;
+    case 'CHAIN': return `CHAIN ${m.threshold}以上`;
+    case 'ELECTRIC': return `ELECTRIC ${m.threshold}回以上`;
+    case 'BURST': return `MAX BURST ${m.threshold}以上`;
+    case 'FULLCLEAR': return 'FULL CLEAR';
+  }
+  return '';
+}
+function evaluateMissionPart(stats, m){
+  switch(m.type){
+    case 'DESTROY': { const actual = Math.round(stats.destroyRate*100); return { type:m.type, ok: actual>=m.threshold, actual, target:m.threshold, label:missionPartLabel(m) }; }
+    case 'CHAIN': { const actual = stats.chainCount; return { type:m.type, ok: actual>=m.threshold, actual, target:m.threshold, label:missionPartLabel(m) }; }
+    case 'ELECTRIC': { const actual = stats.electricCount; return { type:m.type, ok: actual>=m.threshold, actual, target:m.threshold, label:missionPartLabel(m) }; }
+    case 'BURST': { const actual = stats.maxSimultaneous; return { type:m.type, ok: actual>=m.threshold, actual, target:m.threshold, label:missionPartLabel(m) }; }
+    case 'FULLCLEAR': { return { type:m.type, ok: stats.fullClear, actual: stats.fullClear?1:0, target:1, label:missionPartLabel(m) }; }
+  }
+  return { type:m.type, ok:false, actual:0, target:0, label:'' };
+}
+function evaluateMission(stats, mission){
+  const parts = mission.parts.map(p => evaluateMissionPart(stats, p));
+  return { ok: parts.every(p=>p.ok), parts };
+}
+function avg(range){ return (range[0]+range[1])/2; }
+function pickMission(stage, search){
+  const diff = stageDifficulty(stage);
+  const best = search.best.stats;
+  const ratio = avg(diff.targetRatio);
+
+  if (diff.metric === 'ELECTRIC_ANY'){
+    return { parts:[{type:'ELECTRIC', threshold:1}], label:'ELECTRICを1回発生させろ' };
+  }
+  if (diff.metric === 'COMPOUND'){
+    const parts = [];
+    const destroyTarget = Math.min(95, Math.max(30, Math.round(best.destroyRate*100*ratio/5)*5));
+    parts.push({type:'DESTROY', threshold:destroyTarget});
+    if (best.electricCount >= 1){
+      parts.push({type:'ELECTRIC', threshold: Math.max(1, Math.min(best.electricCount, 2))});
+    } else {
+      const chainTarget = Math.max(4, Math.round(best.chainCount*ratio));
+      parts.push({type:'CHAIN', threshold: chainTarget});
+    }
+    return { parts, label: parts.map(p=>missionPartLabel(p)).join(' + ') };
+  }
+  if (diff.metric === 'CHAIN'){
+    const t = Math.max(3, Math.round(best.chainCount*ratio));
+    return { parts:[{type:'CHAIN', threshold:t}], label:`CHAIN ${t}以上を達成せよ` };
+  }
+  const t = Math.min(95, Math.max(30, Math.round(best.destroyRate*100*ratio/5)*5));
+  return { parts:[{type:'DESTROY', threshold:t}], label:`破壊率${t}%以上を達成せよ` };
+}
+
+/* ===================== BOARD QUALITY GATE ===================== */
+function evaluateBoardQuality(stage, search, mission){
+  const empties = search.empties;
+  if (empties < 5 || !search.best) return { ok:false, reason:'空きマスが少なすぎる' };
+  const solveResults = search.results.filter(r => evaluateMission(r.stats, mission).ok);
+  const solveCount = solveResults.length;
+  const solveRatio = solveCount/empties;
+  const bestSolving = solveResults.length ? solveResults.slice().sort((a,b)=>b.stats.score-a.stats.score)[0] : null;
+  if (solveCount === 0) return { ok:false, reason:'ミッションを達成できる配置が存在しない', solveCount, solveRatio, bestSolving };
+  const diff = stageDifficulty(stage);
+  if (solveRatio < diff.solveMin*0.5) return { ok:false, reason:'正解候補が少なすぎる', solveCount, solveRatio, bestSolving };
+  if (solveRatio > diff.solveMax*1.6) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', solveCount, solveRatio, bestSolving };
+  const best = search.best.stats.score;
+  const median = search.median;
+  if (best > 0 && (best-median) < best*0.12) return { ok:false, reason:'最適解と中央値の差が小さい', solveCount, solveRatio, bestSolving };
+  const centerScore = search.centerBaseline ? search.centerBaseline.stats.score : 0;
+  if (best > 0 && centerScore >= best*0.97 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', solveCount, solveRatio, bestSolving };
+  const newParts = (STAGE_PARTS[stage] || []).filter(p => !(STAGE_PARTS[stage-1]||[]).includes(p));
+  if (newParts.length){
+    const usedNew = newParts.some(p => search.best.stats.destroyedTypes.has(p));
+    if (!usedNew) return { ok:false, reason:'新部品が最適ルートに関係していない', solveCount, solveRatio, bestSolving };
+  }
+  if (search.best.stats.chainCount < 2 && stage >= 2) return { ok:false, reason:'最適解でも連鎖が起きない', solveCount, solveRatio, bestSolving };
+  return { ok:true, solveCount, solveRatio, best, median, bestSolving };
+}
+function buildFallbackBoard(stage, rng){
+  const parts = stagePartsFor(stage);
+  const board = [];
+  for (let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push(null); board.push(row); }
+  const fillerWeights = { EMPTY:0.55, BLOCK:0.35 };
+  if (parts.includes('GLASS')) fillerWeights.GLASS = 0.10;
+  for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){
+    const type = weightedPick(fillerWeights, rng);
+    board[y][x] = type==='EMPTY' ? null : makeCell(type);
+  }
+  const cx = 5, cy = 2;
+  board[cy][cx] = makeCell('FUEL');
+  if (parts.includes('EXPLOSIVE')) board[cy][cx+1] = makeCell('EXPLOSIVE');
+  board[cy][cx-1] = null;
+  if (parts.includes('WALL')) board[cy+1][cx] = makeCell('WALL');
+  if (parts.includes('GAS')) board[cy][Math.min(cx+2,COLS-1)] = makeCell('GAS');
+  if (parts.includes('BATTERY') && parts.includes('METAL')){
+    board[cy+2][cx] = makeCell('METAL');
+    board[cy+1][cx-1] = makeCell('BATTERY');
+  }
+  ensureMinEmpty(board, 6, rng);
+  return board;
+}
+const MAX_GENERATION_ATTEMPTS = 50;
+function generateStage(stage, cfg, runSeed){
+  const attempts = [];
+  let chosen = null;
+  for (let i=0; i<MAX_GENERATION_ATTEMPTS; i++){
+    const seed = hashSeed(runSeed+'|stage'+stage+'|attempt'+i);
+    const rng = mulberry32(seed);
+    const board = generateBoardRaw(stage, rng);
+    const search = exhaustiveSearch(board, cfg);
+    if (!search.best){ attempts.push({seed, ok:false, reason:'空きマスなし'}); continue; }
+    const mission = pickMission(stage, search);
+    const quality = evaluateBoardQuality(stage, search, mission);
+    attempts.push({ seed, ok:quality.ok, reason:quality.reason||'OK', solveCount:quality.solveCount, solveRatio:quality.solveRatio, best:search.best.stats.score, median:search.median });
+    if (quality.ok){
+      chosen = { board, mission, search, seed, attemptIndex:i, fallback:false, bestSolving:quality.bestSolving };
+      break;
+    }
+  }
+  if (!chosen){
+    const seed = hashSeed(runSeed+'|stage'+stage+'|fallback');
+    const rng = mulberry32(seed);
+    const board = buildFallbackBoard(stage, rng);
+    const search = exhaustiveSearch(board, cfg);
+    const mission = pickMission(stage, search);
+    const quality = evaluateBoardQuality(stage, search, mission);
+    chosen = { board, mission, search, seed, attemptIndex: MAX_GENERATION_ATTEMPTS, fallback:true, bestSolving: quality.bestSolving || search.best };
+  }
+  chosen.attempts = attempts;
+  chosen.stage = stage;
+  return chosen;
 }
 
 /* ===================== AUDIO ===================== */
@@ -438,10 +675,15 @@ let fallAnim = null;
 let shake = { mag:0, total:0, until:0 };
 let camScale = 1, camScaleTarget = 1;
 
+const DISCOVERED_KEY = 'oneexplosion_discovered';
+let DEBUG_MODE = false;
+
 const run = {
   stage: 1, totalStages: 8, score: 0, bestChain: 0,
   bombConfig: { levels: {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0} },
   board: null, bombPos: null,
+  runSeed: 1, mission: null, search: null, genDebug: null,
+  stageFailCount: 0, discovered: new Set(), tutorialShownThisRun: new Set(),
 };
 
 function resizeCanvas(){
@@ -689,6 +931,23 @@ function drawEffects(now){
       ctx.globalAlpha = 1-t;
       ctx.fillStyle = e.ignite ? COLOR.danger : COLOR.accent;
       ctx.beginPath(); ctx.arc(e.x,e.y, 3+3*(1-t), 0, Math.PI*2); ctx.fill();
+    } else if (e.type==='wallflash'){
+      ctx.globalAlpha = (1-t)*0.9;
+      ctx.strokeStyle = COLOR.text;
+      ctx.lineWidth = 3*(1-t)+1;
+      ctx.strokeRect(e.x-e.size/2+2, e.y-e.size/2+2, e.size-4, e.size-4);
+    } else if (e.type==='label'){
+      ctx.globalAlpha = 1-t;
+      ctx.fillStyle = COLOR.accent;
+      ctx.font = `700 ${Math.round(cellPx*0.34)}px Inter, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(e.text, e.x, e.y - cellPx*0.22*t);
+    } else if (e.type==='glow'){
+      const pulse = 0.5+0.5*Math.sin((now-e.start)/110);
+      ctx.globalAlpha = (1-t)*0.85;
+      ctx.strokeStyle = COLOR.accent;
+      ctx.lineWidth = 2+pulse*2;
+      ctx.beginPath(); ctx.arc(e.x, e.y, cellPx*0.42+pulse*3, 0, Math.PI*2); ctx.stroke();
     }
     ctx.restore();
   }
@@ -712,7 +971,27 @@ function draw(now){
   drawGrid();
   drawCells(now);
   drawEffects(now);
+  drawDebugOverlay();
   ctx.restore();
+}
+function drawDebugOverlay(){
+  if (!DEBUG_MODE || !run.search || uiState!=='SELECT' || !run.mission) return;
+  const solveSet = new Set(run.search.results.filter(r=>evaluateMission(r.stats, run.mission).ok).map(r=>r.x+','+r.y));
+  for (const r of run.search.results){
+    const cx = r.x*cellPx+cellPx/2, cy = r.y*cellPx+cellPx/2;
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = solveSet.has(r.x+','+r.y) ? '#3ddc84' : '#55555a';
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  if (run.search.best){
+    const cx = run.search.best.x*cellPx+cellPx/2, cy = run.search.best.y*cellPx+cellPx/2;
+    ctx.save();
+    ctx.strokeStyle = '#3ddc84'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(cx,cy,cellPx*0.35,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 /* ===================== EFFECT SPAWNERS ===================== */
@@ -720,6 +999,10 @@ function triggerShake(mag, dur){ shake.mag=mag; shake.total=dur; shake.until=per
 function spawnExplosionEffects(step){
   for (const h of step.hits){
     const cx = h.x*cellPx+cellPx/2, cy = h.y*cellPx+cellPx/2;
+    if (h.type==='WALL'){
+      effects.push({type:'wallflash', x:cx, y:cy, start:performance.now(), dur:300, size:cellPx});
+      continue;
+    }
     effects.push({type:'flash', x:cx, y:cy, start:performance.now(), dur: h.destroyed?260:160, strong:h.destroyed, size:cellPx});
   }
   for (const d of step.destroyed){
@@ -728,6 +1011,7 @@ function spawnExplosionEffects(step){
     const parts = [];
     for (let i=0;i<n;i++) parts.push({a:Math.random()*Math.PI*2, speed: cellPx*(0.6+Math.random()*0.9), size:1.5+Math.random()*2});
     effects.push({type:'burst', x:cx, y:cy, start:performance.now(), dur:380, parts});
+    if (d.order) effects.push({type:'label', x:cx, y:cy, start:performance.now(), dur:520, text:String(d.order)});
   }
   for (const s of step.sources){
     const cx = s.x*cellPx+cellPx/2, cy = s.y*cellPx+cellPx/2;
@@ -738,6 +1022,8 @@ function spawnElectricArcs(step){
   for (const d of step.discharges){
     const pts = [d.from, ...d.metal, ...d.targets].map(p=>({x:p.x*cellPx+cellPx/2, y:p.y*cellPx+cellPx/2}));
     effects.push({type:'spark', points:pts, start:performance.now(), dur:280});
+    const fromPx = { x:d.from.x*cellPx+cellPx/2, y:d.from.y*cellPx+cellPx/2 };
+    effects.push({type:'ring', x:fromPx.x, y:fromPx.y, start:performance.now(), dur:260, maxR:cellPx*0.9});
   }
 }
 function spawnEmbers(cells){
@@ -806,7 +1092,7 @@ async function runBlow(){
   currentBoard = result.finalBoard;
   camScaleTarget = 1;
   await new Promise(r => setTimeout(r, 260));
-  showResult(result.stats);
+  showResult(result.stats, result.eventLog);
 }
 
 /* ===================== UI / SCREEN FLOW ===================== */
@@ -817,22 +1103,50 @@ function showScreen(id){
 }
 let legendDrawn = false;
 function drawLegend(){
-  if (legendDrawn) return;
-  const nodes = document.querySelectorAll('.legend-icon');
-  nodes.forEach(node => {
-    const type = node.dataset.type;
-    const lctx = node.getContext('2d');
-    const size = 72;
-    lctx.clearRect(0,0,size,size);
-    drawIconAt(lctx, makeCell(type), size/2, size/2, size);
+  if (!legendDrawn){
+    const nodes = document.querySelectorAll('.legend-icon');
+    nodes.forEach(node => {
+      const type = node.dataset.type;
+      const lctx = node.getContext('2d');
+      const size = 72;
+      lctx.clearRect(0,0,size,size);
+      drawIconAt(lctx, makeCell(type), size/2, size/2, size);
+    });
+    legendDrawn = true;
+  }
+  refreshLegendDiscovery();
+}
+function boardHasType(board, type){
+  for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){ if (board[y][x] && board[y][x].type===type) return true; }
+  return false;
+}
+function loadDiscovered(){
+  try {
+    const raw = localStorage.getItem(DISCOVERED_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch (e) {}
+  return new Set(['BLOCK']);
+}
+function saveDiscovered(){
+  try { localStorage.setItem(DISCOVERED_KEY, JSON.stringify(Array.from(run.discovered))); } catch (e) {}
+}
+function refreshLegendDiscovery(){
+  document.querySelectorAll('.legend-item').forEach(item => {
+    const type = item.dataset.part;
+    const known = type==='BLOCK' || run.discovered.has(type);
+    item.classList.toggle('undiscovered', !known);
+    const info = LEGEND_ITEMS.find(l=>l.type===type);
+    item.querySelector('.legend-name').textContent = known ? (info ? info.label : type) : '???';
   });
-  legendDrawn = true;
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function refreshHUD(){
   document.getElementById('hud-stage').textContent = pad2(run.stage);
   document.getElementById('hud-score').textContent = run.score.toLocaleString();
   document.getElementById('hud-best').textContent = run.bestChain;
+}
+function updateMissionBanner(){
+  document.getElementById('mission-text').textContent = run.mission ? run.mission.label : '';
 }
 function updateBombStatsPanel(){
   const cfg = deriveConfig(run.bombConfig.levels);
@@ -854,21 +1168,72 @@ function animateCount(el, target, dur){
   }
   requestAnimationFrame(step);
 }
-function showResult(stats){
+
+/* ---- failure cause analysis ---- */
+function analyzeStopReason(remainingObjects, cfg, eventLog){
+  const battery = remainingObjects.filter(o=>o.type==='BATTERY');
+  const metal = remainingObjects.filter(o=>o.type==='METAL');
+  const reach = cfg.conductiveLevel>=2 ? 2 : 1;
+  let bestDist = Infinity;
+  for (const b of battery) for (const m of metal){
+    const d = Math.abs(b.x-m.x)+Math.abs(b.y-m.y);
+    if (d<bestDist) bestDist = d;
+  }
+  if (bestDist === reach+1){
+    return 'この電池は金属まであと1マス届きませんでした';
+  }
+  const wasBlocked = (eventLog||[]).some(step => step.kind==='explosion' && step.hits.some(h=>h.type==='WALL'));
+  if (wasBlocked){
+    return '爆風が壁に阻まれました';
+  }
+  if (remainingObjects.some(o=>isExplosiveFamily(o.type))){
+    return '誘爆しなかった爆薬・燃料・ガスが残っています';
+  }
+  return '連鎖がここで止まりました';
+}
+
+/* ---- mission-aware result screen ---- */
+function showResult(stats, eventLog){
   uiState = 'IDLE';
   showScreen('screen-result');
+  const evalResult = evaluateMission(stats, run.mission);
+
+  const statusEl = document.getElementById('result-status');
+  statusEl.textContent = evalResult.ok ? 'MISSION COMPLETE' : 'MISSION FAILED';
+  statusEl.classList.toggle('ok', evalResult.ok);
+  statusEl.classList.toggle('fail', !evalResult.ok);
+
+  document.getElementById('result-mission-line').textContent =
+    evalResult.parts.map(p => `${p.label} → ${p.actual}${p.type==='DESTROY'?'%':''}`).join('   ');
+
   document.getElementById('res-destroy').textContent = Math.round(stats.destroyRate*100)+'%';
   document.getElementById('res-chain').textContent = '×'+stats.chainCount;
   document.getElementById('res-electric').textContent = '×'+stats.electricCount;
   document.getElementById('res-burst').textContent = stats.maxSimultaneous;
   document.getElementById('res-fullclear').textContent = stats.fullClear ? 'YES' : '—';
-  run.score += stats.score;
-  if (stats.chainCount > run.bestChain){
-    run.bestChain = stats.chainCount;
-    try { localStorage.setItem(BEST_KEY, String(run.bestChain)); } catch (e) {}
-  }
   document.getElementById('res-total').textContent = '0';
   animateCount(document.getElementById('res-total'), stats.score, 700);
+
+  const hintEl = document.getElementById('result-fail-hint');
+  if (evalResult.ok){
+    hintEl.hidden = true;
+    run.score += stats.score;
+    if (stats.chainCount > run.bestChain){
+      run.bestChain = stats.chainCount;
+      try { localStorage.setItem(BEST_KEY, String(run.bestChain)); } catch (e) {}
+    }
+    run.stageFailCount = 0;
+  } else {
+    run.stageFailCount = (run.stageFailCount||0) + 1;
+    const cfg = deriveConfig(run.bombConfig.levels);
+    const reason = analyzeStopReason(stats.remainingObjects||[], cfg, eventLog);
+    hintEl.textContent = 'CHAIN STOP\n' + reason;
+    hintEl.hidden = false;
+  }
+  document.getElementById('btn-result-next').style.display = evalResult.ok ? '' : 'none';
+  document.getElementById('btn-result-retry').hidden = evalResult.ok;
+  refreshHUD();
+  refreshDebugPanel();
 }
 function shuffle(arr){
   const a = arr.slice();
@@ -896,17 +1261,129 @@ function showUpgrade(){
     wrap.appendChild(card);
   }
 }
+
+/* ---- new-object tutorial ---- */
+let tutorialQueue = [];
+let currentTutorialType = null;
+function glowCellAt(x, y){
+  if (!cellPx) return;
+  effects.push({type:'glow', x:x*cellPx+cellPx/2, y:y*cellPx+cellPx/2, start:performance.now(), dur:1500});
+}
+function glowPartOnBoard(type){
+  for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){
+    if (run.board[y][x] && run.board[y][x].type===type){ glowCellAt(x,y); return; }
+  }
+}
+function nextTutorial(){
+  if (!tutorialQueue.length) return;
+  currentTutorialType = tutorialQueue.shift();
+  run.tutorialShownThisRun.add(currentTutorialType);
+  if (!run.discovered.has(currentTutorialType)){
+    run.discovered.add(currentTutorialType);
+    saveDiscovered();
+  }
+  const info = PART_INFO[currentTutorialType];
+  document.getElementById('tutorial-name').textContent = info.name;
+  document.getElementById('tutorial-desc').textContent = info.desc;
+  document.getElementById('tutorial-overlay').hidden = false;
+}
+function dismissTutorial(){
+  document.getElementById('tutorial-overlay').hidden = true;
+  if (currentTutorialType) glowPartOnBoard(currentTutorialType);
+  currentTutorialType = null;
+  if (tutorialQueue.length) setTimeout(nextTutorial, 900);
+}
+function showTutorialIfNeeded(){
+  const stage = run.stage;
+  const prevParts = STAGE_PARTS[stage-1] || [];
+  const newParts = STAGE_PARTS[stage].filter(p => !prevParts.includes(p) && p !== 'BLOCK');
+  const toShow = newParts.filter(p => boardHasType(run.board, p) && !run.tutorialShownThisRun.has(p));
+  if (!toShow.length) return;
+  tutorialQueue = toShow.slice();
+  nextTutorial();
+}
+
+/* ---- repeated-failure hint ---- */
+function glowKeyParts(){
+  const best = run.search && (run.search.bestSolving || run.search.best);
+  if (!best) return;
+  const cfg = deriveConfig(run.bombConfig.levels);
+  const full = simulate(run.board, {x:best.x, y:best.y}, cfg);
+  const keyTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
+  for (const step of full.steps){
+    if (step.kind !== 'explosion') continue;
+    for (const item of step.destroyed){
+      if (keyTypes.has(item.type)){ glowCellAt(item.x, item.y); return; }
+    }
+  }
+}
+
+/* ---- debug panel ---- */
+function refreshDebugPanel(){
+  if (!DEBUG_MODE) return;
+  const gd = run.genDebug;
+  const el = document.getElementById('debug-content');
+  if (!gd || !run.search){ el.textContent = '(no generation data yet)'; return; }
+  const lines = [];
+  lines.push(`STAGE ${run.stage}   seed=${gd.seed}`);
+  lines.push(`fallback=${gd.fallback}   attempt=${gd.attemptIndex+1}/${MAX_GENERATION_ATTEMPTS}`);
+  lines.push(`empties=${run.search.empties}   best=${run.search.best.stats.score}   median=${run.search.median}`);
+  lines.push(`mission: ${run.mission.label}`);
+  const solveCount = run.search.results.filter(r=>evaluateMission(r.stats, run.mission).ok).length;
+  const pct = run.search.empties ? (solveCount/run.search.empties*100).toFixed(0) : '0';
+  lines.push(`solveCount=${solveCount}/${run.search.empties} (${pct}%)`);
+  lines.push(`top-score cell=(${run.search.best.x},${run.search.best.y})`);
+  if (run.search.bestSolving) lines.push(`best solving cell=(${run.search.bestSolving.x},${run.search.bestSolving.y}) score=${run.search.bestSolving.stats.score}`);
+  lines.push(`upgrades: ${JSON.stringify(run.bombConfig.levels)}`);
+  lines.push(`stageFailCount=${run.stageFailCount}`);
+  lines.push('');
+  lines.push('-- attempts (last 12) --');
+  gd.attempts.slice(-12).forEach((a,i)=>{
+    lines.push(`#${i} ${a.ok?'OK':'reject'}  ${a.reason}  solve=${a.solveCount||0}`);
+  });
+  el.textContent = lines.join('\n');
+}
+
+/* ---- stage loading ---- */
+function loadStageBoard(stage){
+  const cfg = deriveConfig(run.bombConfig.levels);
+  const chosen = generateStage(stage, cfg, run.runSeed);
+  run.board = chosen.board;
+  run.mission = chosen.mission;
+  run.search = chosen.search;
+  run.search.bestSolving = chosen.bestSolving || chosen.search.best;
+  run.genDebug = { seed:chosen.seed, attempts:chosen.attempts, fallback:chosen.fallback, attemptIndex:chosen.attemptIndex };
+  run.stageFailCount = 0;
+  run.bombPos = null;
+  currentBoard = run.board;
+}
+function enterStageScreen(){
+  uiState = 'SELECT';
+  showScreen('screen-game');
+  requestAnimationFrame(resizeCanvas);
+  refreshHUD();
+  updateMissionBanner();
+  updateBombStatsPanel();
+  document.getElementById('btn-blow').disabled = true;
+  refreshDebugPanel();
+  setTimeout(showTutorialIfNeeded, 200);
+}
 function proceedToNextStage(){
   run.stage++;
-  run.board = generateBoard(run.stage);
+  loadStageBoard(run.stage);
+  enterStageScreen();
+}
+function retrySameStage(){
   run.bombPos = null;
   currentBoard = run.board;
   uiState = 'SELECT';
   showScreen('screen-game');
   requestAnimationFrame(resizeCanvas);
   refreshHUD();
+  updateMissionBanner();
   updateBombStatsPanel();
   document.getElementById('btn-blow').disabled = true;
+  if (run.stageFailCount >= 2) setTimeout(glowKeyParts, 500);
 }
 function showFinal(){
   showScreen('screen-final');
@@ -918,15 +1395,11 @@ function showFinal(){
 function startNewRun(){
   run.stage = 1; run.score = 0;
   run.bombConfig = { levels: {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0} };
-  run.board = generateBoard(1);
-  run.bombPos = null;
-  currentBoard = run.board;
-  uiState = 'SELECT';
-  showScreen('screen-game');
-  requestAnimationFrame(resizeCanvas);
-  refreshHUD();
-  updateBombStatsPanel();
-  document.getElementById('btn-blow').disabled = true;
+  run.runSeed = Date.now() ^ Math.floor(Math.random()*0xffffffff);
+  run.discovered = loadDiscovered();
+  run.tutorialShownThisRun = new Set();
+  loadStageBoard(1);
+  enterStageScreen();
 }
 function onCanvasPointerDown(e){
   if (uiState!=='SELECT' || !cellPx) return;
@@ -950,7 +1423,7 @@ function onResultNext(){
 }
 
 /* ===================== INIT ===================== */
-document.addEventListener('DOMContentLoaded', () => {
+function initApp(){
   canvas = document.getElementById('board-canvas');
   ctx = canvas.getContext('2d');
   window.addEventListener('resize', resizeCanvas);
@@ -958,9 +1431,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-start').addEventListener('click', () => { AudioEngine.ensure(); startNewRun(); });
   document.getElementById('btn-blow').addEventListener('click', onBlowClick);
   document.getElementById('btn-result-next').addEventListener('click', onResultNext);
+  document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); retrySameStage(); });
   document.getElementById('btn-retry').addEventListener('click', () => { AudioEngine.ensure(); startNewRun(); });
   document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
+  document.getElementById('tutorial-dismiss').addEventListener('click', dismissTutorial);
   canvas.addEventListener('pointerdown', onCanvasPointerDown);
 
   let best = 0;
@@ -968,8 +1443,26 @@ document.addEventListener('DOMContentLoaded', () => {
   run.bestChain = best;
   document.getElementById('title-best-chain').textContent = best;
 
+  DEBUG_MODE = /[?&]debug=1/.test(window.location.search);
+  if (DEBUG_MODE){
+    document.getElementById('debug-panel').style.display = 'block';
+    window.__run = run;
+  }
+
   showScreen('screen-title');
   requestAnimationFrame(draw);
-});
+}
+if (typeof document !== 'undefined'){
+  document.addEventListener('DOMContentLoaded', initApp);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    simulate, exhaustiveSearch, generateStage, generateBoardRaw, deriveConfig,
+    pickMission, evaluateMission, evaluateBoardQuality, hashSeed, mulberry32,
+    stagePartsFor, stageDifficulty, STAGE_PARTS, STAGE_DIFFICULTY, OBJ,
+    ROWS, COLS, MAX_GENERATION_ATTEMPTS, buildFallbackBoard, countDestructible,
+  };
+}
 
 })();
