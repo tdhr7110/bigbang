@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=7" />
+<link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 <div id="app">
@@ -20,6 +20,7 @@
       <div class="title-mark">ONE</div>
       <h1 class="title-logo">EXPLOSION</h1>
       <p class="title-sub">爆弾を1個。最大の連鎖を。</p>
+      <div class="title-badge" id="title-badge" hidden>★ PERFECT CLEAR ★</div>
     </div>
     <div class="title-foot">
       <button id="btn-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
@@ -48,6 +49,7 @@
           <div class="obj-card-name" id="tutorial-obj-name"></div>
           <div class="obj-card-desc" id="tutorial-obj-desc"></div>
           <div class="obj-card-tip" id="tutorial-obj-tip"></div>
+          <div class="obj-card-fall" id="tutorial-obj-fall"></div>
         </div>
         <div class="chapter-pager">
           <button id="btn-tutorial-obj-prev" class="chapter-arrow">‹</button>
@@ -289,8 +291,8 @@
 
   <!-- ===================== CAMPAIGN COMPLETE ===================== -->
   <section id="screen-final" class="screen">
-    <div class="final-wrap">
-      <div class="final-label">CAMPAIGN COMPLETE</div>
+    <div class="final-wrap" id="final-wrap">
+      <div class="final-label" id="final-label">CAMPAIGN COMPLETE</div>
       <div class="final-score mono" id="final-score">0</div>
       <div class="final-sub">
         <div class="result-mini">
@@ -302,6 +304,9 @@
           <span id="final-stages" class="mono">0 / 0</span>
         </div>
       </div>
+      <div class="final-perfect-badge" id="final-perfect-badge" hidden>
+        ★ PERFECT CLEAR ★<br>全100ステージ 100%達成
+      </div>
     </div>
     <button id="btn-final-stgsel" class="btn btn-accent btn-large">STAGE SELECT</button>
   </section>
@@ -309,6 +314,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=7"></script>
+<script src="src/app.js?v=8"></script>
 </body>
 </html>

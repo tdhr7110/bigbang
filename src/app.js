@@ -39,41 +39,49 @@ const PART_INFO = {
     name:'BLOCK',
     desc:'爆風を1回受けると壊れる、ただのがれき。自分では爆発しない。',
     tip:'BLOCKだけを崩しても連鎖は起きない。近くの燃料や爆薬を巻き込めているか確認しよう。',
+    fall:'下が空けば真下に1マスずつ落ちる、ごく普通の物体。落下自体では何も起きない。',
   },
   FUEL: {
     name:'FUEL TANK',
     desc:'壊れると自分を中心に3×3マスの爆発を起こし、周囲を巻き込む。',
     tip:'FUEL同士が近くにあると連鎖が途切れにくい。爆弾から直接届かない燃料も、他の燃料を中継すれば誘爆できる。',
+    fall:'落下自体は爆発の引き金にならない。壊れて空いた場所に落ちてきたあと、次の爆風でまた巻き込まれることはある。',
   },
   EXPLOSIVE: {
     name:'EXPLOSIVE',
     desc:'壊れると自分を中心に5×5マスの大きな爆発を起こす、連鎖の要。',
     tip:'爆発範囲が広いぶん貴重な部品。盤面のどこにあるか確認して、確実に巻き込めるルートを探そう。',
+    fall:'落下自体は爆発の引き金にならない。FUELと同じく、壊れて初めて爆発する。',
   },
   GAS: {
     name:'GAS CANISTER',
     desc:'壊れてもすぐには爆発せず、少し遅れてから3×3マスの爆発を起こす。',
     tip:'他の爆発が落ち着いたあとに追加で発生するので、離れた場所まで連鎖を伸ばす中継役になる。',
+    fall:'落下自体は爆発の引き金にならない。壊れて初めて、少し遅れてから爆発する。',
   },
   GLASS: {
     name:'GLASS',
     desc:'BLOCKと同じくHP1。直撃しなくても、近くの燃料の爆発で生じた炎が届くと割れる。',
     tip:'爆風が直接届かない場所のGLASSも、隣の燃料タンクが爆発すれば火が回って割れることがある。',
+    fall:'下が空けば真下に1マスずつ落ちる、ごく普通の物体。落下自体では割れない。',
   },
   WALL: {
     name:'WALL',
     desc:'壊れない壁。止められるのは2マス以上先まで届く爆風だけ。EXPLOSIVEの5×5爆風はこの壁で止まるが、3×3(爆弾本体・FUEL・GAS)は元々隣のマスまでしか届かないため、壁があってもなくても変わらない。',
     tip:'警戒すべきはEXPLOSIVEの爆風。3×3の爆風を防ぐ壁としてはほぼ機能しない。',
+    fall:'唯一、自分自身は絶対に落下しない。その代わり「床」として働き、上に乗っている物はWALLを通り抜けず真上で止まる。縦の列をWALLで区切って、区画ごとに別々に積もらせることができる。',
   },
   BATTERY: {
     name:'BATTERY',
     desc:'直撃で壊れるか、落下してMETALに触れると自動で放電する。',
     tip:'電池は金属に触れた瞬間に効果を発揮する。爆風で落下させてMETALにぶつけよう。',
+    fall:'落下は感電の引き金になる唯一のケース。落ちた先でMETALの金属ネットワークに隣接すれば、その場で自動的に感電が発生する。',
   },
   METAL: {
     name:'METAL',
     desc:'HP2で頑丈。BATTERYが触れると感電し、隣接1マスの燃料系を巻き込む。',
     tip:'METALとBATTERYが隣り合っていれば、どちらかを崩すか落下させるだけで感電が起きる。',
+    fall:'METAL自身が落下してBATTERYに近づいても感電は起きない。感電が起きるのは、あくまでBATTERY側が壊れる・落下する場合だけ。',
   },
 };
 
@@ -1401,6 +1409,15 @@ function freshGameState(){
 function hasSaveData(){
   try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
 }
+// The completionist reward condition: every one of the 100 stages has been played
+// AND reached a literal 100% (full clear) at least once - not just cleared with 1 star.
+function isPerfectClear(){
+  for (let s=1; s<=TOTAL_STAGES; s++){
+    const p = game.stageProgress[String(s)];
+    if (!p || p.bestExplosionRate < 1) return false;
+  }
+  return true;
+}
 function saveGame(){
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(game)); } catch (e) {}
 }
@@ -1452,6 +1469,7 @@ function drawLegend(){
       `<div class="help-obj-name">${known ? info.name : '???'}</div>` +
       `<div class="help-obj-desc">${known ? info.desc : 'ステージで見つけると説明が表示されます'}</div>` +
       (known ? `<div class="help-obj-tip">▸ ${info.tip}</div>` : '') +
+      (known ? `<div class="help-obj-fall">落下: ${info.fall}</div>` : '') +
       `</div>`;
     wrap.appendChild(item);
     requestAnimationFrame(() => {
@@ -1850,6 +1868,10 @@ function showFinal(){
   document.getElementById('final-best-chain').textContent = game.bestChain;
   document.getElementById('final-score').textContent = '0';
   animateCount(document.getElementById('final-score'), game.totalScore, 900);
+  const perfect = isPerfectClear();
+  document.getElementById('final-label').textContent = perfect ? 'PERFECT CLEAR' : 'CAMPAIGN COMPLETE';
+  document.getElementById('final-label').classList.toggle('perfect', perfect);
+  document.getElementById('final-perfect-badge').hidden = !perfect;
 }
 function startNewCampaign(){
   game = freshGameState();
@@ -1921,6 +1943,7 @@ function refreshTitleButtons(){
   const has = hasSaveData();
   document.getElementById('btn-continue').hidden = !has;
   document.getElementById('btn-stage-select').hidden = !has;
+  document.getElementById('title-badge').hidden = !(has && isPerfectClear());
 }
 let currentChapter = 1;
 function showStageSelect(){
@@ -1988,7 +2011,8 @@ function showHelp(fromGame){
     item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
       `<div class="help-obj-text"><div class="help-obj-name">${info.name}</div>` +
       `<div class="help-obj-desc">${info.desc}</div>` +
-      `<div class="help-obj-tip">▸ ${info.tip}</div></div>`;
+      `<div class="help-obj-tip">▸ ${info.tip}</div>` +
+      `<div class="help-obj-fall">落下: ${info.fall}</div></div>`;
     list.appendChild(item);
     requestAnimationFrame(() => {
       const c = item.querySelector('canvas');
@@ -2008,6 +2032,7 @@ function renderTutorialObjCard(){
   document.getElementById('tutorial-obj-name').textContent = info.name;
   document.getElementById('tutorial-obj-desc').textContent = info.desc;
   document.getElementById('tutorial-obj-tip').textContent = `▸ ${info.tip}`;
+  document.getElementById('tutorial-obj-fall').textContent = `落下: ${info.fall}`;
   document.getElementById('tutorial-obj-label').textContent = `${tutorialObjIndex+1} / ${LEGEND_ITEMS.length}`;
   document.getElementById('btn-tutorial-obj-prev').disabled = tutorialObjIndex <= 0;
   document.getElementById('btn-tutorial-obj-next').disabled = tutorialObjIndex >= LEGEND_ITEMS.length-1;
