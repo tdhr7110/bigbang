@@ -346,6 +346,11 @@ html, body {
 .guide-heading { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }
 .practice-desc { font-size: 13px; color: var(--text-2); line-height: 1.6; text-align: center; max-width: 340px; }
 #tutorial-panel-practice { align-items: center; justify-content: center; gap: 16px; }
+.obj-card { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 10px 4px 4px; }
+.obj-card-icon { width: 56px; height: 56px; }
+.obj-card-name { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; color: var(--text); }
+.obj-card-desc { font-size: 12.5px; color: var(--text-2); line-height: 1.5; max-width: 320px; }
+.obj-card-tip { font-size: 11.5px; color: var(--accent); line-height: 1.5; max-width: 320px; }
 
 /* ===================== HOW TO PLAY ===================== */
 #screen-howto { align-items: center; justify-content: center; gap: 2vh; padding: 2.5vh 20px; }

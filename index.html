@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=5" />
+<link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
 <div id="app">
@@ -43,7 +43,17 @@
     <div class="help-panel" id="tutorial-panel-guide">
       <div class="guide-section">
         <div class="guide-heading">設置物</div>
-        <div class="help-objects-list" id="tutorial-objects-list"></div>
+        <div class="obj-card">
+          <canvas class="obj-card-icon" id="tutorial-obj-icon" width="96" height="96"></canvas>
+          <div class="obj-card-name" id="tutorial-obj-name"></div>
+          <div class="obj-card-desc" id="tutorial-obj-desc"></div>
+          <div class="obj-card-tip" id="tutorial-obj-tip"></div>
+        </div>
+        <div class="chapter-pager">
+          <button id="btn-tutorial-obj-prev" class="chapter-arrow">‹</button>
+          <span class="chapter-label" id="tutorial-obj-label">1 / 8</span>
+          <button id="btn-tutorial-obj-next" class="chapter-arrow">›</button>
+        </div>
       </div>
       <div class="guide-section">
         <div class="guide-heading">連鎖（誘爆）の仕組み</div>
@@ -299,6 +309,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=5"></script>
+<script src="src/app.js?v=6"></script>
 </body>
 </html>
