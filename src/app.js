@@ -186,6 +186,34 @@ function ensureMetalBatteryPair(board, rng){
   if (!hasMetal){ const p=randomConvertibleCell(board, rng); if(p) board[p.y][p.x]=makeCell('METAL'); }
   if (!hasBattery){ const p=randomConvertibleCell(board, rng); if(p) board[p.y][p.x]=makeCell('BATTERY'); }
 }
+// At harder stages (once WALL is unlocked), partially box in the key explosive-family
+// cells with WALL on 2-3 of their 4 orthogonal sides, leaving 1-2 sides open. Since
+// blast line-of-sight is blocked by WALL cells lying on the straight line to a target,
+// this sharply narrows which bomb positions can actually reach the cell that starts
+// the chain - without it, a fixed blast radius makes almost every placement "good enough".
+function narrowLineOfSight(board, stage, rng){
+  const parts = stagePartsFor(stage);
+  if (!parts.includes('WALL')) return;
+  const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
+  if (t < 0.35) return;
+  const keyCells = [];
+  forEachCell(board, (c,x,y) => { if (c && isExplosiveFamily(c.type)) keyCells.push({x,y}); });
+  const boxProb = Math.min(0.95, 0.3 + t*0.85);
+  const protectedTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
+  for (const k of keyCells){
+    if (rng() > boxProb) continue;
+    const dirs = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
+    for (let i=dirs.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
+    const openSides = rng() < (0.65-0.25*t) ? 1 : 2;
+    for (let i=openSides; i<dirs.length; i++){
+      const nx = k.x+dirs[i].dx, ny = k.y+dirs[i].dy;
+      if (nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
+      const cur = board[ny][nx];
+      if (cur && protectedTypes.has(cur.type)) continue;
+      board[ny][nx] = makeCell('WALL');
+    }
+  }
+}
 function generateBoardRaw(stageIndex, rng){
   const weights = stageWeights(stageIndex);
   const board = [];
@@ -203,6 +231,7 @@ function generateBoardRaw(stageIndex, rng){
   if (parts.includes('GAS')) explosiveFamily.push('GAS');
   ensureMinCount(board, explosiveFamily, 2, rng);
   if (parts.includes('BATTERY') && parts.includes('METAL')) ensureMetalBatteryPair(board, rng);
+  narrowLineOfSight(board, stageIndex, rng);
   return board;
 }
 function countDestructible(board){
