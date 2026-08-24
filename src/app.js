@@ -1945,7 +1945,7 @@ function initApp(){
   if (DEBUG_MODE){
     document.getElementById('debug-panel').style.display = 'block';
     window.__run = run;
-    window.__game = game;
+    Object.defineProperty(window, '__game', { get: () => game, configurable: true });
     window.__debug = { getEffects: () => effects, getChainPopupText: () => document.getElementById('chain-popup').textContent };
   }
 
