@@ -3,7 +3,6 @@
 
 /* ===================== CONSTANTS ===================== */
 const ROWS = 8, COLS = 8;
-const BEST_KEY = 'oneexplosion_best_chain';
 const HITSTOP_MS = 60, WAVE_MS = 230, GRAVITY_MS = 220, ELECTRIC_MS = 260, FIRE_MS = 180;
 const BIG_CHAIN_THRESHOLD = 8;
 
@@ -752,15 +751,13 @@ let fallAnim = null;
 let shake = { mag:0, total:0, until:0 };
 let camScale = 1, camScaleTarget = 1;
 
-const DISCOVERED_KEY = 'oneexplosion_discovered';
 let DEBUG_MODE = false;
 
 const run = {
-  stage: 1, totalStages: 8, score: 0, bestChain: 0,
-  bombConfig: { levels: {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0} },
   board: null, bombPos: null,
-  runSeed: 1, mission: null, search: null, genDebug: null,
-  stageFailCount: 0, discovered: new Set(), tutorialShownThisRun: new Set(),
+  mission: null, search: null, genDebug: null,
+  stageFailCount: 0, lastAttempt: null, tipsHintArea: null,
+  pendingLevelUp: false, pendingXp: 0,
 };
 
 function resizeCanvas(){
@@ -913,7 +910,7 @@ function drawBombMarker(ctx, x, y, now){
   ctx.restore();
 }
 function drawBlastPreview(ctx, x, y){
-  const cfg = deriveConfig(run.bombConfig.levels);
+  const cfg = deriveConfig(game.bombConfig.levels);
   ctx.save();
   ctx.strokeStyle = COLOR.text2;
   ctx.lineWidth = 1;
@@ -1177,7 +1174,7 @@ async function runBlow(){
   uiState = 'PLAYBACK';
   document.getElementById('btn-blow').disabled = true;
   AudioEngine.ensure();
-  const cfg = deriveConfig(run.bombConfig.levels);
+  const cfg = deriveConfig(game.bombConfig.levels);
   const result = simulate(run.board, run.bombPos, cfg);
   await playSteps(result.steps);
   currentBoard = result.finalBoard;
@@ -1185,6 +1182,99 @@ async function runBlow(){
   await new Promise(r => setTimeout(r, 260));
   resetPlaybackState();
   showResult(result.stats, result.eventLog);
+}
+
+/* ===================== SAVE / CAMPAIGN STATE ===================== */
+const SAVE_VERSION = 1;
+const SAVE_KEY = 'oneexplosion_save_v1';
+const CHAPTER_SIZE = 10;
+const CHAPTER_COUNT = TOTAL_STAGES / CHAPTER_SIZE;
+function defaultBombLevels(){ return {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0}; }
+function freshGameState(){
+  return {
+    saveVersion: SAVE_VERSION,
+    currentStage: 1,
+    unlockedStage: 1,
+    playerLevel: 1,
+    experience: 0,
+    bombConfig: { levels: defaultBombLevels() },
+    upgradeSlots: 3,
+    stageProgress: {},
+    discoveredObjects: ['BLOCK'],
+    seenTutorials: [],
+    totalScore: 0,
+    bestChain: 0,
+    settings: {},
+    runSeed: Date.now() ^ Math.floor(Math.random()*0xffffffff),
+  };
+}
+function hasSaveData(){
+  try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
+function saveGame(){
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(game)); } catch (e) {}
+}
+function loadGame(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object' || data.saveVersion !== SAVE_VERSION) return null;
+    return {
+      saveVersion: SAVE_VERSION,
+      currentStage: data.currentStage || 1,
+      unlockedStage: data.unlockedStage || 1,
+      playerLevel: data.playerLevel || 1,
+      experience: data.experience || 0,
+      bombConfig: (data.bombConfig && data.bombConfig.levels) ? data.bombConfig : { levels: defaultBombLevels() },
+      upgradeSlots: data.upgradeSlots || 3,
+      stageProgress: (data.stageProgress && typeof data.stageProgress==='object') ? data.stageProgress : {},
+      discoveredObjects: Array.isArray(data.discoveredObjects) ? data.discoveredObjects : ['BLOCK'],
+      seenTutorials: Array.isArray(data.seenTutorials) ? data.seenTutorials : [],
+      totalScore: data.totalScore || 0,
+      bestChain: data.bestChain || 0,
+      settings: data.settings || {},
+      runSeed: data.runSeed || (Date.now() ^ Math.floor(Math.random()*0xffffffff)),
+    };
+  } catch (e) {
+    try { localStorage.removeItem(SAVE_KEY); } catch (e2) {}
+    return null;
+  }
+}
+let game = freshGameState();
+
+/* ---- XP / leveling ---- */
+function xpForLevel(level){ return 70 + level*35; }
+function xpReward(stars, missionCleared){
+  let xp = 0;
+  if (stars >= 1) xp += 25;
+  if (stars >= 2) xp += 15;
+  if (stars >= 3) xp += 20;
+  if (missionCleared) xp += 30;
+  return xp;
+}
+function applyXp(amount){
+  game.experience += amount;
+  let leveledUp = false;
+  while (game.experience >= xpForLevel(game.playerLevel)){
+    game.experience -= xpForLevel(game.playerLevel);
+    game.playerLevel++;
+    leveledUp = true;
+  }
+  return leveledUp;
+}
+function upgradeNumericDesc(id, level){
+  const cfg = deriveConfig(Object.assign(defaultBombLevels(), {[id]: level}));
+  const cfgNext = deriveConfig(Object.assign(defaultBombLevels(), {[id]: level+1}));
+  switch (id){
+    case 'RANGE': return `爆発範囲 RANGE ${cfg.radius} → ${cfgNext.radius}`;
+    case 'FUELX2': return `燃料・ガスの爆発範囲 ${cfg.fuelRadius} → ${cfgNext.fuelRadius}`;
+    case 'DOUBLETAP': return `爆発回数 ${level+1}回 → ${level+2}回`;
+    case 'CONDUCTIVE': return level===0 ? '被弾した電池も放電するようになる' : `感電の到達距離 ${cfg.conductiveLevel} → ${cfgNext.conductiveLevel}`;
+    case 'SHOCKWAVE': return `衝撃波の追加範囲 +${level} → +${level+1}`;
+    case 'BURN': return `炎の持続 ${1+level}ターン → ${1+level+1}ターン`;
+    default: return '';
+  }
 }
 
 /* ===================== UI / SCREEN FLOW ===================== */
@@ -1212,20 +1302,15 @@ function boardHasType(board, type){
   for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){ if (board[y][x] && board[y][x].type===type) return true; }
   return false;
 }
-function loadDiscovered(){
-  try {
-    const raw = localStorage.getItem(DISCOVERED_KEY);
-    if (raw) return new Set(JSON.parse(raw));
-  } catch (e) {}
-  return new Set(['BLOCK']);
-}
-function saveDiscovered(){
-  try { localStorage.setItem(DISCOVERED_KEY, JSON.stringify(Array.from(run.discovered))); } catch (e) {}
+function flattenBoardTypes(board){
+  const set = new Set();
+  for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){ if (board[y][x]) set.add(board[y][x].type); }
+  return Array.from(set);
 }
 function refreshLegendDiscovery(){
   document.querySelectorAll('.legend-item').forEach(item => {
     const type = item.dataset.part;
-    const known = type==='BLOCK' || run.discovered.has(type);
+    const known = type==='BLOCK' || game.discoveredObjects.includes(type);
     item.classList.toggle('undiscovered', !known);
     const info = LEGEND_ITEMS.find(l=>l.type===type);
     item.querySelector('.legend-name').textContent = known ? (info ? info.label : type) : '???';
@@ -1233,21 +1318,20 @@ function refreshLegendDiscovery(){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function refreshHUD(){
-  document.getElementById('hud-stage').textContent = pad2(run.stage);
-  document.getElementById('hud-score').textContent = run.score.toLocaleString();
-  document.getElementById('hud-best').textContent = run.bestChain;
+  document.getElementById('hud-stage').textContent = pad2(game.currentStage);
+  document.getElementById('hud-level').textContent = game.playerLevel;
 }
 function updateMissionBanner(){
   document.getElementById('mission-text').textContent = run.mission ? run.mission.label : '';
 }
 function updateBombStatsPanel(){
-  const cfg = deriveConfig(run.bombConfig.levels);
+  const cfg = deriveConfig(game.bombConfig.levels);
   let html = `<span class="chip">RANGE <b>${cfg.radius}</b></span>`;
   if (cfg.shockwaveLevel) html += `<span class="chip">SHOCK <b>${cfg.shockwaveLevel}</b></span>`;
   if (cfg.burnLevel) html += `<span class="chip">BURN <b>${cfg.burnLevel}</b></span>`;
   if (cfg.conductiveLevel) html += `<span class="chip">ELEC <b>${cfg.conductiveLevel}</b></span>`;
   if (cfg.doubleTapLevel) html += `<span class="chip">TAP <b>${cfg.doubleTapLevel+1}×</b></span>`;
-  if (run.bombConfig.levels.FUELX2) html += `<span class="chip">FUEL <b>${run.bombConfig.levels.FUELX2}</b></span>`;
+  if (game.bombConfig.levels.FUELX2) html += `<span class="chip">FUEL <b>${game.bombConfig.levels.FUELX2}</b></span>`;
   document.getElementById('bomb-stats').innerHTML = html;
 }
 function animateCount(el, target, dur){
@@ -1267,64 +1351,107 @@ function analyzeStopReason(remainingObjects, cfg, eventLog){
   const metal = remainingObjects.filter(o=>o.type==='METAL');
   const reach = cfg.conductiveLevel>=2 ? 2 : 1;
   let bestDist = Infinity;
+  let farBattery = null;
   for (const b of battery) for (const m of metal){
     const d = Math.abs(b.x-m.x)+Math.abs(b.y-m.y);
-    if (d<bestDist) bestDist = d;
+    if (d<bestDist){ bestDist = d; farBattery = b; }
   }
   if (bestDist === reach+1){
-    return 'この電池は金属まであと1マス届きませんでした';
+    return { text:'この電池は金属まであと1マス届きませんでした', area: farBattery };
   }
   const wasBlocked = (eventLog||[]).some(step => step.kind==='explosion' && step.hits.some(h=>h.type==='WALL'));
   if (wasBlocked){
-    return '爆風が壁に阻まれました';
+    return { text:'爆風が壁に阻まれました', area:null };
   }
-  if (remainingObjects.some(o=>isExplosiveFamily(o.type))){
-    return '誘爆しなかった爆薬・燃料・ガスが残っています';
+  const leftover = remainingObjects.filter(o=>isExplosiveFamily(o.type));
+  if (leftover.length){
+    // report the leftover object farthest from the board center - usually the "missed corner"
+    let far = leftover[0], farD = -1;
+    for (const o of leftover){ const d = Math.abs(o.x-3.5)+Math.abs(o.y-3.5); if (d>farD){ farD=d; far=o; } }
+    return { text:'誘爆しなかった爆薬・燃料・ガスが残っています', area: far };
   }
-  return '連鎖がここで止まりました';
+  return { text:'連鎖がここで止まりました', area:null };
 }
 
-/* ---- mission-aware result screen ---- */
+/* ---- mission-aware, star-based result screen ---- */
 function showResult(stats, eventLog){
   resetPlaybackState();
   uiState = 'IDLE';
   showScreen('screen-result');
-  const evalResult = evaluateMission(stats, run.mission);
+
+  const stage = game.currentStage;
+  const key = String(stage);
+  const progress = game.stageProgress[key];
+  const cfg = deriveConfig(game.bombConfig.levels);
+  const maxDestroy = run.search ? run.search.maxDestroyCount : stats.destroyCount;
+  const rate = explosionRateFor(stats.destroyCount, maxDestroy);
+  const stars = starsForRate(rate);
+  const missionEval = evaluateMission(stats, run.mission);
+
+  progress.attempts = (progress.attempts||0) + 1;
+  if (rate > (progress.bestExplosionRate||0)) progress.bestExplosionRate = rate;
+  if (stars > (progress.stars||0)) progress.stars = stars;
+  if (missionEval.ok) progress.missionCleared = true;
+  if (stats.score > (progress.bestScore||0)) progress.bestScore = stats.score;
+  if (stats.chainCount > (progress.bestChain||0)) progress.bestChain = stats.chainCount;
+
+  game.totalScore += stats.score;
+  if (stats.chainCount > game.bestChain) game.bestChain = stats.chainCount;
+
+  let xpGain = 0, leveledUp = false;
+  if (stars >= 1){
+    xpGain = xpReward(stars, missionEval.ok);
+    leveledUp = applyXp(xpGain);
+    if (stage < TOTAL_STAGES && game.unlockedStage < stage+1) game.unlockedStage = stage+1;
+  }
+
+  const stopReason = stars < 1 ? analyzeStopReason(stats.remainingObjects||[], cfg, eventLog) : null;
+  if (stars < 1){
+    progress.failCount = (progress.failCount||0) + 1;
+    run.stageFailCount = progress.failCount;
+  }
+  run.lastAttempt = {
+    bombPos: run.bombPos, rate, chainCount: stats.chainCount,
+    remainingObjects: stats.remainingObjects||[], missedArea: stopReason ? stopReason.area : null,
+  };
+  progress.lastAttempt = run.lastAttempt;
+  run.pendingLevelUp = leveledUp;
+  run.pendingXp = xpGain;
+
+  saveGame();
 
   const statusEl = document.getElementById('result-status');
-  statusEl.textContent = evalResult.ok ? 'MISSION COMPLETE' : 'MISSION FAILED';
-  statusEl.classList.toggle('ok', evalResult.ok);
-  statusEl.classList.toggle('fail', !evalResult.ok);
+  const cleared = stars >= 1;
+  statusEl.textContent = missionEval.ok ? 'MISSION COMPLETE' : (cleared ? 'STAGE CLEAR' : 'MISSION FAILED');
+  statusEl.classList.toggle('ok', missionEval.ok || cleared);
+  statusEl.classList.toggle('fail', !cleared);
 
-  document.getElementById('result-mission-line').textContent =
-    evalResult.parts.map(p => `${p.label} → ${p.actual}${p.type==='DESTROY'?'%':''}`).join('   ');
-
-  document.getElementById('res-destroy').textContent = Math.round(stats.destroyRate*100)+'%';
+  document.querySelectorAll('#result-stars .star').forEach((el,i)=>{ el.classList.toggle('lit', i < stars); });
+  document.getElementById('res-rate').textContent = Math.round(rate*100)+'%';
+  document.getElementById('res-destroy').textContent = stats.destroyCount;
   document.getElementById('res-chain').textContent = '×'+stats.chainCount;
   document.getElementById('res-electric').textContent = '×'+stats.electricCount;
   document.getElementById('res-burst').textContent = stats.maxSimultaneous;
-  document.getElementById('res-fullclear').textContent = stats.fullClear ? 'YES' : '—';
-  document.getElementById('res-total').textContent = '0';
-  animateCount(document.getElementById('res-total'), stats.score, 700);
+
+  document.getElementById('result-mission-line').textContent =
+    missionEval.parts.map(p => `${p.label} → ${p.actual}${p.type==='DESTROY'?'%':''}`).join('   ');
+  const badge = document.getElementById('result-mission-badge');
+  badge.textContent = missionEval.ok ? '達成' : '未達成';
+  badge.classList.toggle('ok', missionEval.ok);
 
   const hintEl = document.getElementById('result-fail-hint');
-  if (evalResult.ok){
-    hintEl.hidden = true;
-    run.score += stats.score;
-    if (stats.chainCount > run.bestChain){
-      run.bestChain = stats.chainCount;
-      try { localStorage.setItem(BEST_KEY, String(run.bestChain)); } catch (e) {}
-    }
-    run.stageFailCount = 0;
-  } else {
-    run.stageFailCount = (run.stageFailCount||0) + 1;
-    const cfg = deriveConfig(run.bombConfig.levels);
-    const reason = analyzeStopReason(stats.remainingObjects||[], cfg, eventLog);
-    hintEl.textContent = 'CHAIN STOP\n' + reason;
+  if (!cleared){
+    hintEl.textContent = 'CHAIN STOP\n' + stopReason.text;
     hintEl.hidden = false;
+  } else {
+    hintEl.hidden = true;
   }
-  document.getElementById('btn-result-next').style.display = evalResult.ok ? '' : 'none';
-  document.getElementById('btn-result-retry').hidden = evalResult.ok;
+
+  const xpEl = document.getElementById('result-xp');
+  if (xpGain > 0){ document.getElementById('res-xp-gain').textContent = '+'+xpGain; xpEl.hidden = false; }
+  else xpEl.hidden = true;
+
+  document.getElementById('btn-result-next').disabled = !cleared;
   refreshHUD();
   refreshDebugPanel();
 }
@@ -1333,26 +1460,44 @@ function shuffle(arr){
   for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
   return a;
 }
-function showUpgrade(){
+function showLevelUp(){
   showScreen('screen-upgrade');
+  document.getElementById('upgrade-label').textContent = 'LEVEL UP';
+  document.getElementById('upgrade-title').textContent = `Lv.${game.playerLevel-1} → Lv.${game.playerLevel}`;
+  const nextStage = game.currentStage + 1;
+  const previewEl = document.getElementById('next-stage-preview');
+  if (nextStage <= TOTAL_STAGES){
+    const nextProgress = peekStage(nextStage);
+    const objs = flattenBoardTypes(nextProgress.boardData).map(t => PART_INFO[t].name).join(' / ');
+    previewEl.innerHTML = `NEXT STAGE ${pad2(nextStage)}<br>MISSION <b>${nextProgress.mission.label}</b><br>OBJECTS <b>${objs}</b>`;
+  } else {
+    previewEl.innerHTML = 'FINAL STAGE CLEARED';
+  }
   const pool = shuffle(UPGRADES).slice(0,3);
   const wrap = document.getElementById('upgrade-cards');
   wrap.innerHTML = '';
+  document.getElementById('btn-upgrade-continue').hidden = true;
   for (const u of pool){
-    const lvl = run.bombConfig.levels[u.id];
+    const lvl = game.bombConfig.levels[u.id];
     const card = document.createElement('div');
     card.className = 'upgrade-card';
-    card.innerHTML = `<div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div>${lvl>0?`<div class="u-lv">LV.${lvl+1}</div>`:''}`;
+    card.innerHTML = `<div class="u-name">${u.name}</div><div class="u-desc">${upgradeNumericDesc(u.id, lvl)}</div>${lvl>0?`<div class="u-lv">LV.${lvl+1}</div>`:''}`;
     card.addEventListener('click', () => {
       if (card.dataset.picked) return;
       card.dataset.picked = '1';
       card.classList.add('selected');
-      run.bombConfig.levels[u.id]++;
+      game.bombConfig.levels[u.id]++;
       AudioEngine.tick();
-      setTimeout(proceedToNextStage, 220);
+      saveGame();
+      setTimeout(afterLevelUpPick, 220);
     });
     wrap.appendChild(card);
   }
+}
+function afterLevelUpPick(){
+  const stage = game.currentStage;
+  if (stage >= TOTAL_STAGES) showFinal();
+  else goToStage(stage+1);
 }
 
 /* ---- new-object tutorial ---- */
@@ -1370,11 +1515,9 @@ function glowPartOnBoard(type){
 function nextTutorial(){
   if (!tutorialQueue.length) return;
   currentTutorialType = tutorialQueue.shift();
-  run.tutorialShownThisRun.add(currentTutorialType);
-  if (!run.discovered.has(currentTutorialType)){
-    run.discovered.add(currentTutorialType);
-    saveDiscovered();
-  }
+  if (!game.seenTutorials.includes(currentTutorialType)) game.seenTutorials.push(currentTutorialType);
+  if (!game.discoveredObjects.includes(currentTutorialType)) game.discoveredObjects.push(currentTutorialType);
+  saveGame();
   const info = PART_INFO[currentTutorialType];
   document.getElementById('tutorial-name').textContent = info.name;
   document.getElementById('tutorial-desc').textContent = info.desc;
@@ -1387,18 +1530,68 @@ function dismissTutorial(){
   if (tutorialQueue.length) setTimeout(nextTutorial, 900);
 }
 function showTutorialIfNeeded(){
-  const newParts = stagePartsIntroducedAt(run.stage).filter(p => p !== 'BLOCK');
-  const toShow = newParts.filter(p => boardHasType(run.board, p) && !run.tutorialShownThisRun.has(p));
+  const newParts = stagePartsIntroducedAt(game.currentStage).filter(p => p !== 'BLOCK');
+  const toShow = newParts.filter(p => boardHasType(run.board, p) && !game.seenTutorials.includes(p));
   if (!toShow.length) return;
   tutorialQueue = toShow.slice();
   nextTutorial();
+}
+
+/* ---- staged TIPS ---- */
+let tipsStage = 0;
+let tipsIdleTimer = null;
+function armTipsIdleTimer(){
+  clearTimeout(tipsIdleTimer);
+  if (run.stageFailCount >= 2){ showTipsToast(); return; } // toast already earned via failures
+  tipsIdleTimer = setTimeout(() => { showTipsToast(); }, 25000);
+}
+function showTipsToast(){
+  if (uiState !== 'SELECT') return;
+  document.getElementById('tips-toast').hidden = false;
+}
+function buildTipsText(level){
+  const best = run.search && (run.search.bestSolving || run.search.best);
+  if (level === 1){
+    const family = ['FUEL','EXPLOSIVE','GAS'].find(t => boardHasType(run.board, t));
+    return family ? `${PART_INFO[family].name}の近くから連鎖を始めてみよう` : '爆風が直接当たる部品の数を確認してから置いてみよう';
+  }
+  if (level === 2){
+    const la = run.lastAttempt;
+    if (la && la.missedArea){
+      const area = la.missedArea.x < 4 ? '左' : '右';
+      const vArea = la.missedArea.y < 4 ? '上' : '下';
+      return `${vArea}${area}側のエリアまで爆風が届いていません`;
+    }
+    return '盤面の隅まで連鎖が伸びていないエリアがないか確認しよう';
+  }
+  // level 3: show a coarse quadrant with viable placements, without the exact cell
+  if (best){
+    const area = best.x < 4 ? '左' : '右';
+    const vArea = best.y < 4 ? '上' : '下';
+    return `${vArea}${area}側の範囲に有効な配置があります`;
+  }
+  return '盤面全体を見渡して、部品が密集している場所を探そう';
+}
+function openTips(){
+  tipsStage = Math.min(3, tipsStage+1);
+  document.getElementById('tips-toast').hidden = true;
+  document.getElementById('tips-stage-label').textContent = 'TIPS '+tipsStage;
+  document.getElementById('tips-text').textContent = buildTipsText(tipsStage);
+  document.getElementById('tips-overlay').hidden = false;
+  if (tipsStage >= 3 && run.search){
+    const solveSet = run.search.results.filter(r => starsForRate(explosionRateFor(r.stats.destroyCount, run.search.maxDestroyCount)) >= 1);
+    run.tipsHintArea = solveSet;
+  }
+}
+function dismissTips(){
+  document.getElementById('tips-overlay').hidden = true;
 }
 
 /* ---- repeated-failure hint ---- */
 function glowKeyParts(){
   const best = run.search && (run.search.bestSolving || run.search.best);
   if (!best) return;
-  const cfg = deriveConfig(run.bombConfig.levels);
+  const cfg = deriveConfig(game.bombConfig.levels);
   const full = simulate(run.board, {x:best.x, y:best.y}, cfg);
   const keyTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
   for (const step of full.steps){
@@ -1416,16 +1609,16 @@ function refreshDebugPanel(){
   const el = document.getElementById('debug-content');
   if (!gd || !run.search){ el.textContent = '(no generation data yet)'; return; }
   const lines = [];
-  lines.push(`STAGE ${run.stage}   seed=${gd.seed}`);
+  lines.push(`STAGE ${game.currentStage}   seed=${gd.seed}`);
   lines.push(`fallback=${gd.fallback}   attempt=${gd.attemptIndex+1}/${MAX_GENERATION_ATTEMPTS}`);
-  lines.push(`empties=${run.search.empties}   best=${run.search.best.stats.score}   median=${run.search.median}`);
+  lines.push(`empties=${run.search.empties}   best=${run.search.best.stats.score}   median=${run.search.median}   maxDestroy=${run.search.maxDestroyCount}`);
   lines.push(`mission: ${run.mission.label}`);
   const solveCount = run.search.results.filter(r=>evaluateMission(r.stats, run.mission).ok).length;
-  const pct = run.search.empties ? (solveCount/run.search.empties*100).toFixed(0) : '0';
-  lines.push(`solveCount=${solveCount}/${run.search.empties} (${pct}%)`);
+  const star1Count = run.search.results.filter(r=>starsForRate(explosionRateFor(r.stats.destroyCount, run.search.maxDestroyCount))>=1).length;
+  lines.push(`star1=${star1Count}/${run.search.empties}   missionSolve=${solveCount}/${run.search.empties}`);
   lines.push(`top-score cell=(${run.search.best.x},${run.search.best.y})`);
   if (run.search.bestSolving) lines.push(`best solving cell=(${run.search.bestSolving.x},${run.search.bestSolving.y}) score=${run.search.bestSolving.stats.score}`);
-  lines.push(`upgrades: ${JSON.stringify(run.bombConfig.levels)}`);
+  lines.push(`Lv.${game.playerLevel} exp=${game.experience}/${xpForLevel(game.playerLevel)}   upgrades: ${JSON.stringify(game.bombConfig.levels)}`);
   lines.push(`stageFailCount=${run.stageFailCount}`);
   lines.push('');
   lines.push('-- attempts (last 12) --');
@@ -1435,18 +1628,40 @@ function refreshDebugPanel(){
   el.textContent = lines.join('\n');
 }
 
-/* ---- stage loading ---- */
-function loadStageBoard(stage){
-  const cfg = deriveConfig(run.bombConfig.levels);
-  const chosen = generateStage(stage, cfg, run.runSeed);
-  run.board = chosen.board;
-  run.mission = chosen.mission;
-  run.search = chosen.search;
-  run.search.bestSolving = chosen.bestSolving || chosen.search.best;
-  run.genDebug = { seed:chosen.seed, attempts:chosen.attempts, fallback:chosen.fallback, attemptIndex:chosen.attemptIndex };
-  run.stageFailCount = 0;
+/* ---- stage loading (generate once, cache forever) ---- */
+function peekStage(stageNum){
+  const key = String(stageNum);
+  let progress = game.stageProgress[key];
+  if (!progress){
+    const cfg = deriveConfig(game.bombConfig.levels);
+    const chosen = generateStage(stageNum, cfg, game.runSeed);
+    progress = {
+      stageNumber: stageNum, seed: chosen.seed, boardData: chosen.board, mission: chosen.mission,
+      maxDestroyCountAtGeneration: chosen.search.maxDestroyCount,
+      bestExplosionRate: 0, stars: 0, missionCleared: false, bestScore: 0, bestChain: 0,
+      attempts: 0, failCount: 0, unlocked: stageNum <= game.unlockedStage, lastAttempt: null,
+    };
+    game.stageProgress[key] = progress;
+    saveGame();
+  }
+  return progress;
+}
+function loadStage(stageNum){
+  const cfg = deriveConfig(game.bombConfig.levels);
+  const progress = peekStage(stageNum);
+  run.board = progress.boardData;
+  run.mission = progress.mission;
+  run.search = exhaustiveSearch(run.board, cfg);
+  run.search.bestSolving = run.search.results.filter(r=>evaluateMission(r.stats, run.mission).ok).sort((a,b)=>b.stats.score-a.stats.score)[0] || run.search.best;
+  run.genDebug = { seed: progress.seed, attempts: [], fallback: false, attemptIndex: 0 };
+  run.stageFailCount = progress.failCount || 0;
   run.bombPos = null;
+  run.lastAttempt = progress.lastAttempt || null;
+  run.tipsHintArea = null;
+  tipsStage = 0;
+  game.currentStage = stageNum;
   currentBoard = run.board;
+  saveGame();
 }
 function enterStageScreen(){
   resetPlaybackState();
@@ -1456,17 +1671,22 @@ function enterStageScreen(){
   refreshHUD();
   updateMissionBanner();
   updateBombStatsPanel();
+  document.getElementById('direct-hit').hidden = true;
+  document.getElementById('retry-marker-label').hidden = true;
+  document.getElementById('tips-toast').hidden = true;
   document.getElementById('btn-blow').disabled = true;
   refreshDebugPanel();
+  armTipsIdleTimer();
   setTimeout(showTutorialIfNeeded, 200);
 }
-function proceedToNextStage(){
-  run.stage++;
-  loadStageBoard(run.stage);
+function goToStage(stageNum){
+  loadStage(stageNum);
   enterStageScreen();
 }
 function retrySameStage(){
   resetPlaybackState();
+  const progress = game.stageProgress[String(game.currentStage)];
+  run.board = progress.boardData;
   run.bombPos = null;
   currentBoard = run.board;
   uiState = 'SELECT';
@@ -1475,25 +1695,144 @@ function retrySameStage(){
   refreshHUD();
   updateMissionBanner();
   updateBombStatsPanel();
+  document.getElementById('direct-hit').hidden = true;
   document.getElementById('btn-blow').disabled = true;
+  showRetryMarker();
+  armTipsIdleTimer();
   if (run.stageFailCount >= 2) setTimeout(glowKeyParts, 500);
+}
+function showRetryMarker(){
+  const el = document.getElementById('retry-marker-label');
+  const la = run.lastAttempt;
+  if (!la || !cellPx){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = `前回 ${Math.round(la.rate*100)}% / CHAIN ×${la.chainCount}`;
+  el.style.left = (la.bombPos.x*cellPx + cellPx/2) + 'px';
+  el.style.top = (la.bombPos.y*cellPx) + 'px';
 }
 function showFinal(){
   showScreen('screen-final');
-  document.getElementById('final-stages').textContent = run.stage+' / '+run.totalStages;
-  document.getElementById('final-best-chain').textContent = run.bestChain;
+  document.getElementById('final-stages').textContent = game.currentStage+' / '+TOTAL_STAGES;
+  document.getElementById('final-best-chain').textContent = game.bestChain;
   document.getElementById('final-score').textContent = '0';
-  animateCount(document.getElementById('final-score'), run.score, 900);
+  animateCount(document.getElementById('final-score'), game.totalScore, 900);
 }
-function startNewRun(){
-  run.stage = 1; run.score = 0;
-  run.bombConfig = { levels: {RANGE:0,SHOCKWAVE:0,BURN:0,CONDUCTIVE:0,DOUBLETAP:0,FUELX2:0} };
-  run.runSeed = Date.now() ^ Math.floor(Math.random()*0xffffffff);
-  run.discovered = loadDiscovered();
-  run.tutorialShownThisRun = new Set();
-  loadStageBoard(1);
-  enterStageScreen();
+function startNewCampaign(){
+  game = freshGameState();
+  saveGame();
+  goToStage(1);
 }
+function continueCampaign(){
+  const loaded = loadGame();
+  game = loaded || freshGameState();
+  goToStage(game.currentStage);
+}
+
+/* ---- title / stage select ---- */
+function refreshTitleButtons(){
+  const has = hasSaveData();
+  document.getElementById('btn-continue').hidden = !has;
+  document.getElementById('btn-stage-select').hidden = !has;
+}
+let currentChapter = 1;
+function showStageSelect(){
+  const loaded = loadGame();
+  if (loaded) game = loaded;
+  showScreen('screen-stage-select');
+  document.getElementById('stgsel-level').textContent = game.playerLevel;
+  currentChapter = Math.min(CHAPTER_COUNT, Math.max(1, Math.ceil(game.currentStage/CHAPTER_SIZE)));
+  renderChapterTabs();
+  renderStageGrid();
+}
+function renderChapterTabs(){
+  const wrap = document.getElementById('chapter-tabs');
+  wrap.innerHTML = '';
+  for (let c=1;c<=CHAPTER_COUNT;c++){
+    const start = (c-1)*CHAPTER_SIZE+1;
+    const btn = document.createElement('button');
+    btn.className = 'chapter-tab' + (c===currentChapter?' active':'') + (start>game.unlockedStage?' locked':'');
+    btn.textContent = 'CH'+c;
+    btn.addEventListener('click', () => { currentChapter=c; renderChapterTabs(); renderStageGrid(); });
+    wrap.appendChild(btn);
+  }
+}
+function renderStageGrid(){
+  const wrap = document.getElementById('stage-grid');
+  wrap.innerHTML = '';
+  const start = (currentChapter-1)*CHAPTER_SIZE+1;
+  for (let i=0;i<CHAPTER_SIZE;i++){
+    const stageNum = start+i;
+    const progress = game.stageProgress[String(stageNum)];
+    const unlocked = stageNum <= game.unlockedStage;
+    const tile = document.createElement('div');
+    tile.className = 'stage-tile' + (unlocked?'':' locked') + (stageNum===game.currentStage?' current':'');
+    if (unlocked){
+      const stars = progress ? progress.stars : 0;
+      const starsHtml = [1,2,3].map(n=>`<span class="${n<=stars?'lit':''}">★</span>`).join('');
+      const bestHtml = (progress && progress.bestExplosionRate > 0) ? `<span class="stage-best mono">${Math.round(progress.bestExplosionRate*100)}%</span>` : '';
+      tile.innerHTML = `<span class="stage-num mono">${pad2(stageNum)}</span><span class="stage-stars">${starsHtml}</span><span class="stage-mission-dot ${progress&&progress.missionCleared?'ok':''}"></span>${bestHtml}`;
+      tile.addEventListener('click', () => { goToStage(stageNum); });
+    } else {
+      tile.innerHTML = `<span class="stage-num mono">🔒</span>`;
+    }
+    wrap.appendChild(tile);
+  }
+}
+
+/* ---- in-game help overlay ---- */
+let helpReturnScreen = 'screen-title';
+function showHelp(fromGame){
+  helpReturnScreen = fromGame ? 'screen-game' : 'screen-title';
+  showScreen('screen-help');
+  document.querySelectorAll('.help-tab').forEach((t,i)=>t.classList.toggle('active', i===0));
+  document.getElementById('help-panel-status').hidden = false;
+  document.getElementById('help-panel-objects').hidden = true;
+  document.getElementById('help-panel-tips').hidden = true;
+  document.getElementById('help-mission').textContent = run.mission ? run.mission.label : '—';
+  const cfg = deriveConfig(game.bombConfig.levels);
+  document.getElementById('help-bomb').textContent = `RANGE ${cfg.radius}`;
+  const activeUpgrades = UPGRADES.filter(u => game.bombConfig.levels[u.id] > 0)
+    .map(u => `${u.name} Lv.${game.bombConfig.levels[u.id]}`).join(' / ') || 'なし';
+  document.getElementById('help-upgrades').textContent = activeUpgrades;
+  const objWrap = document.getElementById('help-panel-objects');
+  objWrap.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = 'help-objects-grid';
+  for (const type of game.discoveredObjects){
+    const info = PART_INFO[type];
+    if (!info) continue;
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas><span class="legend-name">${LEGEND_ITEMS.find(l=>l.type===type)?.label||type}</span>`;
+    grid.appendChild(item);
+    requestAnimationFrame(() => {
+      const c = item.querySelector('canvas');
+      drawIconAt(c.getContext('2d'), makeCell(type), 36, 36, 72);
+    });
+  }
+  objWrap.appendChild(grid);
+}
+function hideHelp(){
+  showScreen(helpReturnScreen);
+  if (helpReturnScreen === 'screen-game') gameScreenActive = true;
+}
+
+/* ---- direct-hit preview (before BLOW; no chain/final result shown) ---- */
+function updateDirectHitPreview(){
+  const el = document.getElementById('direct-hit');
+  if (!run.bombPos){ el.hidden = true; return; }
+  const cfg = deriveConfig(game.bombConfig.levels);
+  const { strong } = computeBlastCells(run.board, run.bombPos.x, run.bombPos.y, cfg.radius, 0);
+  const counts = {};
+  for (const c of strong){
+    const cell = run.board[c.y][c.x];
+    if (cell && cell.type!=='WALL') counts[cell.type] = (counts[cell.type]||0)+1;
+  }
+  const rows = Object.entries(counts).map(([t,n]) => `<div class="dh-row"><span>${PART_INFO[t].name}</span><span class="mono">×${n}</span></div>`).join('');
+  el.innerHTML = `<div class="dh-title">DIRECT HIT</div>${rows || '<div class="dh-row"><span>—</span></div>'}`;
+  el.hidden = false;
+}
+
 function onCanvasPointerDown(e){
   if (uiState!=='SELECT' || !cellPx) return;
   const rect = canvas.getBoundingClientRect();
@@ -1506,13 +1845,21 @@ function onCanvasPointerDown(e){
   run.bombPos = {x:gx,y:gy};
   AudioEngine.tick();
   document.getElementById('btn-blow').disabled = false;
+  document.getElementById('retry-marker-label').hidden = true;
+  updateDirectHitPreview();
 }
 function onBlowClick(){
   if (!run.bombPos || uiState!=='SELECT') return;
+  document.getElementById('direct-hit').hidden = true;
+  document.getElementById('tips-toast').hidden = true;
+  clearTimeout(tipsIdleTimer);
   runBlow();
 }
 function onResultNext(){
-  if (run.stage >= run.totalStages) showFinal(); else showUpgrade();
+  if (run.pendingLevelUp){ showLevelUp(); return; }
+  const stage = game.currentStage;
+  if (stage >= TOTAL_STAGES) showFinal();
+  else goToStage(stage+1);
 }
 
 /* ===================== INIT ===================== */
@@ -1521,28 +1868,61 @@ function initApp(){
   ctx = canvas.getContext('2d');
   window.addEventListener('resize', resizeCanvas);
   window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 60));
-  document.getElementById('btn-start').addEventListener('click', () => { AudioEngine.ensure(); startNewRun(); });
-  document.getElementById('btn-blow').addEventListener('click', onBlowClick);
-  document.getElementById('btn-result-next').addEventListener('click', onResultNext);
-  document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); retrySameStage(); });
-  document.getElementById('btn-retry').addEventListener('click', () => { AudioEngine.ensure(); startNewRun(); });
+
+  /* -- title -- */
+  document.getElementById('btn-continue').addEventListener('click', () => { AudioEngine.ensure(); continueCampaign(); });
+  document.getElementById('btn-stage-select').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
+  document.getElementById('btn-newgame').addEventListener('click', () => {
+    AudioEngine.ensure();
+    if (hasSaveData()) showScreen('screen-newgame-confirm');
+    else startNewCampaign();
+  });
+  document.getElementById('btn-newgame-confirm').addEventListener('click', () => startNewCampaign());
+  document.getElementById('btn-newgame-cancel').addEventListener('click', () => showScreen('screen-title'));
   document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
+
+  /* -- gameplay -- */
+  document.getElementById('btn-blow').addEventListener('click', onBlowClick);
   document.getElementById('tutorial-dismiss').addEventListener('click', dismissTutorial);
   canvas.addEventListener('pointerdown', onCanvasPointerDown);
+  document.getElementById('btn-help').addEventListener('click', () => showHelp(true));
+  document.getElementById('tips-toast').addEventListener('click', openTips);
+  document.getElementById('tips-dismiss').addEventListener('click', dismissTips);
 
-  let best = 0;
-  try { best = parseInt(localStorage.getItem(BEST_KEY)||'0', 10) || 0; } catch (e) {}
-  run.bestChain = best;
-  document.getElementById('title-best-chain').textContent = best;
+  /* -- result -- */
+  document.getElementById('btn-result-next').addEventListener('click', onResultNext);
+  document.getElementById('btn-result-retry').addEventListener('click', () => { AudioEngine.ensure(); retrySameStage(); });
+  document.getElementById('btn-result-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
+
+  /* -- level up -- */
+  document.getElementById('btn-upgrade-continue').addEventListener('click', afterLevelUpPick);
+
+  /* -- stage select / help / final -- */
+  document.getElementById('btn-stgsel-back').addEventListener('click', () => showScreen('screen-title'));
+  document.getElementById('btn-help-back').addEventListener('click', hideHelp);
+  document.querySelectorAll('.help-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.help-tab').forEach(t => t.classList.toggle('active', t===tab));
+      const name = tab.dataset.tab;
+      document.getElementById('help-panel-status').hidden = name!=='status';
+      document.getElementById('help-panel-objects').hidden = name!=='objects';
+      document.getElementById('help-panel-tips').hidden = name!=='tips';
+    });
+  });
+  document.getElementById('btn-final-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
 
   DEBUG_MODE = /[?&]debug=1/.test(window.location.search);
   if (DEBUG_MODE){
     document.getElementById('debug-panel').style.display = 'block';
     window.__run = run;
+    window.__game = game;
     window.__debug = { getEffects: () => effects, getChainPopupText: () => document.getElementById('chain-popup').textContent };
   }
 
+  const loaded = loadGame();
+  if (loaded) game = loaded;
+  refreshTitleButtons();
   showScreen('screen-title');
   requestAnimationFrame(draw);
 }
