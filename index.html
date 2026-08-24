@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=9" />
+<link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
 <div id="app">
@@ -69,6 +69,7 @@
       </div>
       <div class="guide-section">
         <div class="guide-heading">落下（重力）の条件</div>
+        <div class="tip-row"><b>落下が起きるタイミング →</b> 爆風の連鎖が完全に途切れて、それ以上どこも誘爆しなくなってから、まとめて一気に落下する。連鎖が続いている間は一切落下しない。落下でBATTERYがMETALに触れて感電すれば、そこからまた新しい爆発が始まり、連鎖が続くこともある。</div>
         <div class="tip-row">何かが壊れて空いたマスがあると、その真上にある物は空いたマスまで一直線に落ちる。横には動かない。</div>
         <div class="tip-row">WALLは床としても働く。WALLに乗っている物はWALLを通り抜けず、WALLの真上で止まる。WALLは縦の列を区画に分け、区画ごとに別々に積もり直す。</div>
         <div class="tip-row">落下そのものは何も壊さない。ただしBATTERYが落下して動いた場合は、着地した位置で下の感電条件を満たせば感電が起こる。</div>
@@ -328,6 +329,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=9"></script>
+<script src="src/app.js?v=10"></script>
 </body>
 </html>
