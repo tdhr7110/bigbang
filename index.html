@@ -9,7 +9,7 @@
      changes either file - GitHub Pages/browser caching can otherwise serve
      a stale style.css or app.js against a fresh index.html (or vice versa)
      after a deploy, which breaks anything that depends on both matching. -->
-<link rel="stylesheet" href="style.css?v=6" />
+<link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
 <div id="app">
@@ -20,6 +20,8 @@
       <div class="title-mark">ONE</div>
       <h1 class="title-logo">EXPLOSION</h1>
       <p class="title-sub">爆弾を1個。最大の連鎖を。</p>
+      <div class="title-badge" id="title-badge" hidden>★ PERFECT CLEAR ★</div>
+      <div class="title-badge title-badge-trophy" id="title-legacy-badge" hidden>🏆 EARLY CLEAR 🏆</div>
     </div>
     <div class="title-foot">
       <button id="btn-continue" class="btn btn-accent btn-large" hidden>CONTINUE</button>
@@ -48,6 +50,7 @@
           <div class="obj-card-name" id="tutorial-obj-name"></div>
           <div class="obj-card-desc" id="tutorial-obj-desc"></div>
           <div class="obj-card-tip" id="tutorial-obj-tip"></div>
+          <div class="obj-card-fall" id="tutorial-obj-fall"></div>
         </div>
         <div class="chapter-pager">
           <button id="btn-tutorial-obj-prev" class="chapter-arrow">‹</button>
@@ -93,6 +96,18 @@
       <div class="confirm-actions">
         <button id="btn-newgame-cancel" class="btn btn-large">CANCEL</button>
         <button id="btn-newgame-confirm" class="btn btn-danger btn-large">RESET &amp; START</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== REGENERATE BOARDS CONFIRM ===================== -->
+  <section id="screen-regen-confirm" class="screen">
+    <div class="confirm-card">
+      <div class="label">盤面を作り直す</div>
+      <p class="confirm-text">全ステージの盤面を新しく作り直します。解放済みのステージ・トータルスコアはそのまま維持されますが、各ステージの★やベスト記録はリセットされます。よろしいですか？</p>
+      <div class="confirm-actions">
+        <button id="btn-regen-cancel" class="btn btn-large">CANCEL</button>
+        <button id="btn-regen-confirm" class="btn btn-danger btn-large">作り直す</button>
       </div>
     </div>
   </section>
@@ -159,6 +174,7 @@
       <button id="btn-chapter-next" class="chapter-arrow">›</button>
     </div>
     <div class="stage-grid" id="stage-grid"></div>
+    <button id="btn-regen-boards" class="btn btn-ghost">盤面を作り直す</button>
     <button id="btn-stgsel-back" class="btn btn-large">BACK</button>
   </section>
 
@@ -289,8 +305,8 @@
 
   <!-- ===================== CAMPAIGN COMPLETE ===================== -->
   <section id="screen-final" class="screen">
-    <div class="final-wrap">
-      <div class="final-label">CAMPAIGN COMPLETE</div>
+    <div class="final-wrap" id="final-wrap">
+      <div class="final-label" id="final-label">CAMPAIGN COMPLETE</div>
       <div class="final-score mono" id="final-score">0</div>
       <div class="final-sub">
         <div class="result-mini">
@@ -302,6 +318,9 @@
           <span id="final-stages" class="mono">0 / 0</span>
         </div>
       </div>
+      <div class="final-perfect-badge" id="final-perfect-badge" hidden>
+        ★ PERFECT CLEAR ★<br>全100ステージ 100%達成
+      </div>
     </div>
     <button id="btn-final-stgsel" class="btn btn-accent btn-large">STAGE SELECT</button>
   </section>
@@ -309,6 +328,6 @@
   <div id="debug-panel" class="debug-panel" style="display:none;"><pre id="debug-content"></pre></div>
 
 </div>
-<script src="src/app.js?v=6"></script>
+<script src="src/app.js?v=9"></script>
 </body>
 </html>

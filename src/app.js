@@ -39,41 +39,49 @@ const PART_INFO = {
     name:'BLOCK',
     desc:'爆風を1回受けると壊れる、ただのがれき。自分では爆発しない。',
     tip:'BLOCKだけを崩しても連鎖は起きない。近くの燃料や爆薬を巻き込めているか確認しよう。',
+    fall:'下が空けば真下に1マスずつ落ちる、ごく普通の物体。落下自体では何も起きない。',
   },
   FUEL: {
     name:'FUEL TANK',
     desc:'壊れると自分を中心に3×3マスの爆発を起こし、周囲を巻き込む。',
     tip:'FUEL同士が近くにあると連鎖が途切れにくい。爆弾から直接届かない燃料も、他の燃料を中継すれば誘爆できる。',
+    fall:'落下自体は爆発の引き金にならない。壊れて空いた場所に落ちてきたあと、次の爆風でまた巻き込まれることはある。',
   },
   EXPLOSIVE: {
     name:'EXPLOSIVE',
     desc:'壊れると自分を中心に5×5マスの大きな爆発を起こす、連鎖の要。',
     tip:'爆発範囲が広いぶん貴重な部品。盤面のどこにあるか確認して、確実に巻き込めるルートを探そう。',
+    fall:'落下自体は爆発の引き金にならない。FUELと同じく、壊れて初めて爆発する。',
   },
   GAS: {
     name:'GAS CANISTER',
     desc:'壊れてもすぐには爆発せず、少し遅れてから3×3マスの爆発を起こす。',
     tip:'他の爆発が落ち着いたあとに追加で発生するので、離れた場所まで連鎖を伸ばす中継役になる。',
+    fall:'落下自体は爆発の引き金にならない。壊れて初めて、少し遅れてから爆発する。',
   },
   GLASS: {
     name:'GLASS',
     desc:'BLOCKと同じくHP1。直撃しなくても、近くの燃料の爆発で生じた炎が届くと割れる。',
     tip:'爆風が直接届かない場所のGLASSも、隣の燃料タンクが爆発すれば火が回って割れることがある。',
+    fall:'下が空けば真下に1マスずつ落ちる、ごく普通の物体。落下自体では割れない。',
   },
   WALL: {
     name:'WALL',
     desc:'壊れない壁。止められるのは2マス以上先まで届く爆風だけ。EXPLOSIVEの5×5爆風はこの壁で止まるが、3×3(爆弾本体・FUEL・GAS)は元々隣のマスまでしか届かないため、壁があってもなくても変わらない。',
     tip:'警戒すべきはEXPLOSIVEの爆風。3×3の爆風を防ぐ壁としてはほぼ機能しない。',
+    fall:'唯一、自分自身は絶対に落下しない。その代わり「床」として働き、上に乗っている物はWALLを通り抜けず真上で止まる。縦の列をWALLで区切って、区画ごとに別々に積もらせることができる。',
   },
   BATTERY: {
     name:'BATTERY',
     desc:'直撃で壊れるか、落下してMETALに触れると自動で放電する。',
     tip:'電池は金属に触れた瞬間に効果を発揮する。爆風で落下させてMETALにぶつけよう。',
+    fall:'落下は感電の引き金になる唯一のケース。落ちた先でMETALの金属ネットワークに隣接すれば、その場で自動的に感電が発生する。',
   },
   METAL: {
     name:'METAL',
     desc:'HP2で頑丈。BATTERYが触れると感電し、隣接1マスの燃料系を巻き込む。',
     tip:'METALとBATTERYが隣り合っていれば、どちらかを崩すか落下させるだけで感電が起きる。',
+    fall:'METAL自身が落下してBATTERYに近づいても感電は起きない。感電が起きるのは、あくまでBATTERY側が壊れる・落下する場合だけ。',
   },
 };
 
@@ -98,15 +106,18 @@ function stagePartsIntroducedAt(stage){
 }
 
 // Fraction of empty cells that should be able to reach >=star1 (50% explosion rate).
-// Interpolated across the 50-stage curve, then eased on stages that just unlocked a
-// new part (per spec: ease up right when a new mechanic appears).
+// Interpolated across the stage curve, then eased on stages that just unlocked a new
+// part. Kept deliberately narrow throughout - a wide band means a large share of cells
+// "work well enough", which lets a player clear stages without ever having to reason
+// about chains/timing/blocking; only stage 1 gets a genuine no-thought freebie so the
+// very first placement isn't a coin flip.
 function stageDifficultyBand(stage){
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
   const lerp = (a,b) => a+(b-a)*t;
-  let min = lerp(0.40, 0.01);
-  let max = lerp(0.65, 0.06);
-  if (isNewPartStage(stage)){ min *= 1.7; max *= 1.8; }
-  if (stage <= 3){ min = Math.max(min, 0.40); max = Math.max(max, 0.65); }
+  let min = lerp(0.16, 0.004);
+  let max = lerp(0.30, 0.025);
+  if (isNewPartStage(stage)){ min *= 1.3; max *= 1.3; }
+  if (stage === 1){ min = Math.max(min, 0.20); max = Math.max(max, 0.35); }
   return { min, max };
 }
 // Which mission metric(s) to offer at this stage, and how ambitious (fraction of the
@@ -159,7 +170,11 @@ function stageWeights(n){
   const w = { EMPTY: lerp(0.28,0.58), BLOCK: lerp(0.34,0.16) };
   if (has('GLASS'))     w.GLASS = lerp(0.09,0.05);
   if (has('FUEL'))      w.FUEL = lerp(0.08,0.06);
-  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.08,0.06);
+  // EXPLOSIVE's 5x5 blast is 4x the area of everything else's 3x3, so even a low board
+  // frequency makes "just aim near any EXPLOSIVE" a reliable no-thought strategy. Kept
+  // scarce throughout (not tapering toward more common like the rest) so it stays a
+  // deliberate, situational payoff rather than a routine safe bet.
+  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.03,0.025);
   if (has('BATTERY'))   w.BATTERY = lerp(0.05,0.04);
   if (has('GAS'))       w.GAS = lerp(0.04,0.03);
   if (has('METAL'))     w.METAL = lerp(0.04,0.04);
@@ -218,22 +233,20 @@ function narrowLineOfSight(board, stage, rng, cfg){
   const parts = stagePartsFor(stage);
   if (!parts.includes('WALL')) return;
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
-  // A bigger-than-base blast radius acts like a much harder stage for this pass: it needs
-  // boxing sooner and more aggressively, since raw distance stops mattering once the blast
-  // already reaches most of the board - only line-of-sight (which WALL blocks regardless
-  // of distance) can still narrow down which placement actually works.
-  const extraR = cfg ? Math.max(0, cfg.radius-2) : 0;
-  const effectiveT = Math.min(1, t + extraR*0.3);
-  if (effectiveT < 0.35) return;
+  // WALL doesn't unlock until t~=0.30 (stage 31), so boxing should start being meaningful
+  // right away rather than waiting for some later global threshold - otherwise WALL sits
+  // on the board as inert decoration for several stages after it's introduced, while the
+  // new-part-stage difficulty easing (which assumes a new mechanic makes boards harder)
+  // has nothing to actually bite into.
   const keyCells = [];
   forEachCell(board, (c,x,y) => { if (c && isExplosiveFamily(c.type)) keyCells.push({x,y}); });
-  const boxProb = Math.min(0.95, 0.3 + effectiveT*0.85);
+  const boxProb = Math.min(0.95, 0.3 + t*0.85);
   const protectedTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
   for (const k of keyCells){
     if (rng() > boxProb) continue;
     const dirs = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
     for (let i=dirs.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
-    const openSides = rng() < (0.65-0.25*effectiveT) ? 1 : 2;
+    const openSides = rng() < (0.65-0.25*t) ? 1 : 2;
     for (let i=openSides; i<dirs.length; i++){
       const nx = k.x+dirs[i].dx, ny = k.y+dirs[i].dy;
       if (nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
@@ -657,18 +670,23 @@ function evaluateBoardQuality(stage, search, mission){
 
   const band = stageDifficultyBand(stage);
   if (star1Ratio < band.min*0.5) return { ok:false, reason:'正解候補が少なすぎる', star1Count, star1Ratio, solveCount, bestSolving };
-  if (star1Ratio > band.max + 0.30) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', star1Count, star1Ratio, solveCount, bestSolving };
-  if (stage > 3 && star2Ratio > 0.8 && empties > 6) return { ok:false, reason:'どこに置いても星2以上になる', star1Count, star1Ratio, solveCount, bestSolving };
+  if (star1Ratio > band.max + 0.10) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', star1Count, star1Ratio, solveCount, bestSolving };
+  if (stage > 2 && star2Ratio > 0.6 && empties > 6) return { ok:false, reason:'どこに置いても星2以上になる', star1Count, star1Ratio, solveCount, bestSolving };
 
   const best = search.best.stats.score;
   const median = search.median;
-  if (stage > 3){
-    if (best > 0 && (best-median) < best*0.10) return { ok:false, reason:'最適配置と適当な配置の差が小さい', star1Count, star1Ratio, solveCount, bestSolving };
+  if (stage > 2){
+    if (best > 0 && (best-median) < best*0.15) return { ok:false, reason:'最適配置と適当な配置の差が小さい', star1Count, star1Ratio, solveCount, bestSolving };
     const centerScore = search.centerBaseline ? search.centerBaseline.stats.score : 0;
-    if (best > 0 && centerScore >= best*0.97 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', star1Count, star1Ratio, solveCount, bestSolving };
+    if (best > 0 && centerScore >= best*0.92 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', star1Count, star1Ratio, solveCount, bestSolving };
   }
 
-  const newParts = stagePartsIntroducedAt(stage);
+  // WALL is indestructible and can never appear in destroyedTypes, so it's excluded here -
+  // otherwise this check would be structurally impossible to pass on WALL's own
+  // introduction stage, and that stage would always fall back regardless of seed. WALL's
+  // presence is still validated indirectly: narrowLineOfSight boxes explosive-family cells
+  // with it once unlocked, which the difficulty-band checks above already account for.
+  const newParts = stagePartsIntroducedAt(stage).filter(p => p !== 'WALL');
   if (newParts.length){
     const usedNew = star1Results.some(r => newParts.some(p => r.stats.destroyedTypes.has(p)));
     if (!usedNew) return { ok:false, reason:'新部品が攻略に関係していない', star1Count, star1Ratio, solveCount, bestSolving };
@@ -1386,10 +1404,23 @@ function freshGameState(){
     bestChain: 0,
     settings: {},
     runSeed: Date.now() ^ Math.floor(Math.random()*0xffffffff),
+    // A brand new campaign obviously hasn't cleared stage 100, so there's nothing to
+    // migrate - mark the one-time legacy-trophy check as already done.
+    legacyClear100: false,
+    legacyCheckDone: true,
   };
 }
 function hasSaveData(){
   try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
+// The completionist reward condition: every one of the 100 stages has been played
+// AND reached a literal 100% (full clear) at least once - not just cleared with 1 star.
+function isPerfectClear(){
+  for (let s=1; s<=TOTAL_STAGES; s++){
+    const p = game.stageProgress[String(s)];
+    if (!p || p.bestExplosionRate < 1) return false;
+  }
+  return true;
 }
 function saveGame(){
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(game)); } catch (e) {}
@@ -1411,6 +1442,10 @@ function loadGame(){
       bestChain: data.bestChain || 0,
       settings: data.settings || {},
       runSeed: data.runSeed || (Date.now() ^ Math.floor(Math.random()*0xffffffff)),
+      // Missing on any save from before the legacy-trophy feature shipped - that's
+      // exactly the signal checkLegacyTrophy() needs to run its one-time check.
+      legacyClear100: !!data.legacyClear100,
+      legacyCheckDone: !!data.legacyCheckDone,
     };
   } catch (e) {
     try { localStorage.removeItem(SAVE_KEY); } catch (e2) {}
@@ -1418,6 +1453,18 @@ function loadGame(){
   }
 }
 let game = freshGameState();
+// One-time migration: a save that already had stage 100 cleared the FIRST time this
+// code ever runs for it was necessarily playing under the pre-difficulty-rework
+// generator - reward that with a permanent trophy. Runs at most once per save (gated
+// by legacyCheckDone), so it can never be earned retroactively by a save that reaches
+// stage 100 for the first time under the new, harder generator.
+function checkLegacyTrophy(){
+  if (game.legacyCheckDone) return;
+  game.legacyCheckDone = true;
+  const p100 = game.stageProgress[String(TOTAL_STAGES)];
+  if (p100 && p100.stars >= 1) game.legacyClear100 = true;
+  saveGame();
+}
 
 /* ===================== UI / SCREEN FLOW ===================== */
 function showScreen(id){
@@ -1442,6 +1489,7 @@ function drawLegend(){
       `<div class="help-obj-name">${known ? info.name : '???'}</div>` +
       `<div class="help-obj-desc">${known ? info.desc : 'ステージで見つけると説明が表示されます'}</div>` +
       (known ? `<div class="help-obj-tip">▸ ${info.tip}</div>` : '') +
+      (known ? `<div class="help-obj-fall">落下: ${info.fall}</div>` : '') +
       `</div>`;
     wrap.appendChild(item);
     requestAnimationFrame(() => {
@@ -1840,15 +1888,30 @@ function showFinal(){
   document.getElementById('final-best-chain').textContent = game.bestChain;
   document.getElementById('final-score').textContent = '0';
   animateCount(document.getElementById('final-score'), game.totalScore, 900);
+  const perfect = isPerfectClear();
+  document.getElementById('final-label').textContent = perfect ? 'PERFECT CLEAR' : 'CAMPAIGN COMPLETE';
+  document.getElementById('final-label').classList.toggle('perfect', perfect);
+  document.getElementById('final-perfect-badge').hidden = !perfect;
 }
 function startNewCampaign(){
   game = freshGameState();
   saveGame();
   goToStage(1);
 }
+// Keeps stage access (unlockedStage/currentStage) and lifetime totals (totalScore,
+// bestChain) exactly as they are, but throws away every cached board/mission/star so
+// every stage gets freshly generated (under whatever the current generator is) the
+// next time it's visited. A new runSeed is required - reusing the old one would just
+// regenerate the exact same boards, since generation is fully deterministic from it.
+function regenerateBoards(){
+  game.runSeed = Date.now() ^ Math.floor(Math.random()*0xffffffff);
+  game.stageProgress = {};
+  saveGame();
+}
 function continueCampaign(){
   const loaded = loadGame();
   game = loaded || freshGameState();
+  checkLegacyTrophy();
   goToStage(game.currentStage);
 }
 
@@ -1911,11 +1974,14 @@ function refreshTitleButtons(){
   const has = hasSaveData();
   document.getElementById('btn-continue').hidden = !has;
   document.getElementById('btn-stage-select').hidden = !has;
+  document.getElementById('title-badge').hidden = !(has && isPerfectClear());
+  document.getElementById('title-legacy-badge').hidden = !(has && game.legacyClear100);
 }
 let currentChapter = 1;
 function showStageSelect(){
   const loaded = loadGame();
   if (loaded) game = loaded;
+  checkLegacyTrophy();
   showScreen('screen-stage-select');
   document.getElementById('stgsel-score').textContent = game.totalScore.toLocaleString();
   currentChapter = Math.min(CHAPTER_COUNT, Math.max(1, Math.ceil(game.currentStage/CHAPTER_SIZE)));
@@ -1978,7 +2044,8 @@ function showHelp(fromGame){
     item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
       `<div class="help-obj-text"><div class="help-obj-name">${info.name}</div>` +
       `<div class="help-obj-desc">${info.desc}</div>` +
-      `<div class="help-obj-tip">▸ ${info.tip}</div></div>`;
+      `<div class="help-obj-tip">▸ ${info.tip}</div>` +
+      `<div class="help-obj-fall">落下: ${info.fall}</div></div>`;
     list.appendChild(item);
     requestAnimationFrame(() => {
       const c = item.querySelector('canvas');
@@ -1998,6 +2065,7 @@ function renderTutorialObjCard(){
   document.getElementById('tutorial-obj-name').textContent = info.name;
   document.getElementById('tutorial-obj-desc').textContent = info.desc;
   document.getElementById('tutorial-obj-tip').textContent = `▸ ${info.tip}`;
+  document.getElementById('tutorial-obj-fall').textContent = `落下: ${info.fall}`;
   document.getElementById('tutorial-obj-label').textContent = `${tutorialObjIndex+1} / ${LEGEND_ITEMS.length}`;
   document.getElementById('btn-tutorial-obj-prev').disabled = tutorialObjIndex <= 0;
   document.getElementById('btn-tutorial-obj-next').disabled = tutorialObjIndex >= LEGEND_ITEMS.length-1;
@@ -2141,6 +2209,12 @@ function initApp(){
   document.getElementById('btn-stgsel-back').addEventListener('click', () => showScreen('screen-title'));
   document.getElementById('btn-chapter-prev').addEventListener('click', () => goToChapter(-1));
   document.getElementById('btn-chapter-next').addEventListener('click', () => goToChapter(1));
+  document.getElementById('btn-regen-boards').addEventListener('click', () => showScreen('screen-regen-confirm'));
+  document.getElementById('btn-regen-cancel').addEventListener('click', () => showScreen('screen-stage-select'));
+  document.getElementById('btn-regen-confirm').addEventListener('click', () => {
+    regenerateBoards();
+    showStageSelect();
+  });
   document.getElementById('btn-help-back').addEventListener('click', hideHelp);
   wireTabGroup('help-tabs');
   wireTabGroup('howto-tabs');
@@ -2157,6 +2231,7 @@ function initApp(){
 
   const loaded = loadGame();
   if (loaded) game = loaded;
+  checkLegacyTrophy();
   showScreen('screen-title');
   requestAnimationFrame(draw);
 }
