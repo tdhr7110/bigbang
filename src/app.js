@@ -98,15 +98,18 @@ function stagePartsIntroducedAt(stage){
 }
 
 // Fraction of empty cells that should be able to reach >=star1 (50% explosion rate).
-// Interpolated across the 50-stage curve, then eased on stages that just unlocked a
-// new part (per spec: ease up right when a new mechanic appears).
+// Interpolated across the stage curve, then eased on stages that just unlocked a new
+// part. Kept deliberately narrow throughout - a wide band means a large share of cells
+// "work well enough", which lets a player clear stages without ever having to reason
+// about chains/timing/blocking; only stage 1 gets a genuine no-thought freebie so the
+// very first placement isn't a coin flip.
 function stageDifficultyBand(stage){
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
   const lerp = (a,b) => a+(b-a)*t;
-  let min = lerp(0.40, 0.01);
-  let max = lerp(0.65, 0.06);
-  if (isNewPartStage(stage)){ min *= 1.7; max *= 1.8; }
-  if (stage <= 3){ min = Math.max(min, 0.40); max = Math.max(max, 0.65); }
+  let min = lerp(0.16, 0.004);
+  let max = lerp(0.30, 0.025);
+  if (isNewPartStage(stage)){ min *= 1.3; max *= 1.3; }
+  if (stage === 1){ min = Math.max(min, 0.20); max = Math.max(max, 0.35); }
   return { min, max };
 }
 // Which mission metric(s) to offer at this stage, and how ambitious (fraction of the
@@ -159,7 +162,11 @@ function stageWeights(n){
   const w = { EMPTY: lerp(0.28,0.58), BLOCK: lerp(0.34,0.16) };
   if (has('GLASS'))     w.GLASS = lerp(0.09,0.05);
   if (has('FUEL'))      w.FUEL = lerp(0.08,0.06);
-  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.08,0.06);
+  // EXPLOSIVE's 5x5 blast is 4x the area of everything else's 3x3, so even a low board
+  // frequency makes "just aim near any EXPLOSIVE" a reliable no-thought strategy. Kept
+  // scarce throughout (not tapering toward more common like the rest) so it stays a
+  // deliberate, situational payoff rather than a routine safe bet.
+  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.03,0.025);
   if (has('BATTERY'))   w.BATTERY = lerp(0.05,0.04);
   if (has('GAS'))       w.GAS = lerp(0.04,0.03);
   if (has('METAL'))     w.METAL = lerp(0.04,0.04);
@@ -218,22 +225,20 @@ function narrowLineOfSight(board, stage, rng, cfg){
   const parts = stagePartsFor(stage);
   if (!parts.includes('WALL')) return;
   const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
-  // A bigger-than-base blast radius acts like a much harder stage for this pass: it needs
-  // boxing sooner and more aggressively, since raw distance stops mattering once the blast
-  // already reaches most of the board - only line-of-sight (which WALL blocks regardless
-  // of distance) can still narrow down which placement actually works.
-  const extraR = cfg ? Math.max(0, cfg.radius-2) : 0;
-  const effectiveT = Math.min(1, t + extraR*0.3);
-  if (effectiveT < 0.35) return;
+  // WALL doesn't unlock until t~=0.30 (stage 31), so boxing should start being meaningful
+  // right away rather than waiting for some later global threshold - otherwise WALL sits
+  // on the board as inert decoration for several stages after it's introduced, while the
+  // new-part-stage difficulty easing (which assumes a new mechanic makes boards harder)
+  // has nothing to actually bite into.
   const keyCells = [];
   forEachCell(board, (c,x,y) => { if (c && isExplosiveFamily(c.type)) keyCells.push({x,y}); });
-  const boxProb = Math.min(0.95, 0.3 + effectiveT*0.85);
+  const boxProb = Math.min(0.95, 0.3 + t*0.85);
   const protectedTypes = new Set(['FUEL','EXPLOSIVE','GAS','BATTERY','METAL']);
   for (const k of keyCells){
     if (rng() > boxProb) continue;
     const dirs = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
     for (let i=dirs.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
-    const openSides = rng() < (0.65-0.25*effectiveT) ? 1 : 2;
+    const openSides = rng() < (0.65-0.25*t) ? 1 : 2;
     for (let i=openSides; i<dirs.length; i++){
       const nx = k.x+dirs[i].dx, ny = k.y+dirs[i].dy;
       if (nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
@@ -657,18 +662,23 @@ function evaluateBoardQuality(stage, search, mission){
 
   const band = stageDifficultyBand(stage);
   if (star1Ratio < band.min*0.5) return { ok:false, reason:'正解候補が少なすぎる', star1Count, star1Ratio, solveCount, bestSolving };
-  if (star1Ratio > band.max + 0.30) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', star1Count, star1Ratio, solveCount, bestSolving };
-  if (stage > 3 && star2Ratio > 0.8 && empties > 6) return { ok:false, reason:'どこに置いても星2以上になる', star1Count, star1Ratio, solveCount, bestSolving };
+  if (star1Ratio > band.max + 0.10) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', star1Count, star1Ratio, solveCount, bestSolving };
+  if (stage > 2 && star2Ratio > 0.6 && empties > 6) return { ok:false, reason:'どこに置いても星2以上になる', star1Count, star1Ratio, solveCount, bestSolving };
 
   const best = search.best.stats.score;
   const median = search.median;
-  if (stage > 3){
-    if (best > 0 && (best-median) < best*0.10) return { ok:false, reason:'最適配置と適当な配置の差が小さい', star1Count, star1Ratio, solveCount, bestSolving };
+  if (stage > 2){
+    if (best > 0 && (best-median) < best*0.15) return { ok:false, reason:'最適配置と適当な配置の差が小さい', star1Count, star1Ratio, solveCount, bestSolving };
     const centerScore = search.centerBaseline ? search.centerBaseline.stats.score : 0;
-    if (best > 0 && centerScore >= best*0.97 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', star1Count, star1Ratio, solveCount, bestSolving };
+    if (best > 0 && centerScore >= best*0.92 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', star1Count, star1Ratio, solveCount, bestSolving };
   }
 
-  const newParts = stagePartsIntroducedAt(stage);
+  // WALL is indestructible and can never appear in destroyedTypes, so it's excluded here -
+  // otherwise this check would be structurally impossible to pass on WALL's own
+  // introduction stage, and that stage would always fall back regardless of seed. WALL's
+  // presence is still validated indirectly: narrowLineOfSight boxes explosive-family cells
+  // with it once unlocked, which the difficulty-band checks above already account for.
+  const newParts = stagePartsIntroducedAt(stage).filter(p => p !== 'WALL');
   if (newParts.length){
     const usedNew = star1Results.some(r => newParts.some(p => r.stats.destroyedTypes.has(p)));
     if (!usedNew) return { ok:false, reason:'新部品が攻略に関係していない', star1Count, star1Ratio, solveCount, bestSolving };
