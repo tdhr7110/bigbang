@@ -62,8 +62,8 @@ const PART_INFO = {
   },
   WALL: {
     name:'WALL',
-    desc:'壊れず、爆風を完全に遮断する。この壁の向こう側には直撃も誘爆も届かない。',
-    tip:'壁の向こうを狙うなら、壁を迂回できる位置に爆弾を置く必要がある。',
+    desc:'壊れない壁。止められるのは2マス以上先まで届く爆風だけ。EXPLOSIVEの5×5爆風はこの壁で止まるが、3×3(爆弾本体・FUEL・GAS)は元々隣のマスまでしか届かないため、壁があってもなくても変わらない。',
+    tip:'警戒すべきはEXPLOSIVEの爆風。3×3の爆風を防ぐ壁としてはほぼ機能しない。',
   },
   BATTERY: {
     name:'BATTERY',
@@ -1984,6 +1984,26 @@ function hideHelp(){
   showScreen(helpReturnScreen);
   if (helpReturnScreen === 'screen-game') gameScreenActive = true;
 }
+function renderTutorialObjectsList(){
+  const wrap = document.getElementById('tutorial-objects-list');
+  wrap.innerHTML = '';
+  for (const li of LEGEND_ITEMS){
+    const type = li.type;
+    const info = PART_INFO[type];
+    if (!info) continue;
+    const item = document.createElement('div');
+    item.className = 'help-obj-item';
+    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
+      `<div class="help-obj-text"><div class="help-obj-name">${info.name}</div>` +
+      `<div class="help-obj-desc">${info.desc}</div>` +
+      `<div class="help-obj-tip">▸ ${info.tip}</div></div>`;
+    wrap.appendChild(item);
+    requestAnimationFrame(() => {
+      const c = item.querySelector('canvas');
+      drawIconAt(c.getContext('2d'), makeCell(type), 36, 36, 72);
+    });
+  }
+}
 
 /* ---- direct-hit preview (before BLOW; no chain/final result shown) ---- */
 function updateDirectHitPreview(){
@@ -2081,7 +2101,9 @@ function initApp(){
   });
   document.getElementById('btn-newgame-confirm').addEventListener('click', () => startNewCampaign());
   document.getElementById('btn-newgame-cancel').addEventListener('click', () => showScreen('screen-title'));
-  document.getElementById('btn-tutorial').addEventListener('click', () => startTutorial());
+  document.getElementById('btn-tutorial').addEventListener('click', () => { renderTutorialObjectsList(); resetTabGroup('tutorial-tabs'); showScreen('screen-tutorial'); });
+  document.getElementById('btn-tutorial-back').addEventListener('click', () => { showScreen('screen-title'); });
+  document.getElementById('btn-tutorial-start').addEventListener('click', () => startTutorial());
   document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); resetTabGroup('howto-tabs'); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
 
@@ -2106,6 +2128,7 @@ function initApp(){
   document.getElementById('btn-help-back').addEventListener('click', hideHelp);
   wireTabGroup('help-tabs');
   wireTabGroup('howto-tabs');
+  wireTabGroup('tutorial-tabs');
   document.getElementById('btn-final-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
 
   DEBUG_MODE = /[?&]debug=1/.test(window.location.search);

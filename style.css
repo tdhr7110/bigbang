@@ -338,6 +338,14 @@ html, body {
 .result-actions .btn-large { width: 100%; }
 .result-actions .btn-ghost { padding: 8px; }
 
+/* ===================== TUTORIAL ===================== */
+#screen-tutorial { align-items: center; justify-content: center; gap: 2vh; padding: 2.5vh 20px; }
+.guide-section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.guide-section:last-child { border-bottom: none; padding-bottom: 0; }
+.guide-heading { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }
+.practice-desc { font-size: 13px; color: var(--text-2); line-height: 1.6; text-align: center; max-width: 340px; }
+#tutorial-panel-practice { align-items: center; justify-content: center; gap: 16px; }
+
 /* ===================== HOW TO PLAY ===================== */
 #screen-howto { align-items: center; justify-content: center; gap: 2vh; padding: 2.5vh 20px; }
 .howto-head { display: flex; flex-direction: column; align-items: center; gap: 4px; }
