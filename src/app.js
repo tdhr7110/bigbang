@@ -35,24 +35,56 @@ const LEGEND_ITEMS = [
 ];
 
 const PART_INFO = {
-  BLOCK:     { name:'BLOCK',        desc:'爆風で壊れる、ただのがれき' },
-  FUEL:      { name:'FUEL TANK',    desc:'壊れると爆発し、周囲を巻き込む' },
-  EXPLOSIVE: { name:'EXPLOSIVE',    desc:'壊れると爆発し、連鎖の起点になる' },
-  GAS:       { name:'GAS CANISTER',desc:'少し遅れて爆発し、離れた場所へ連鎖を伸ばす' },
-  GLASS:     { name:'GLASS',        desc:'脆く、弱い衝撃波でも割れる' },
-  WALL:      { name:'WALL',         desc:'壊れず、爆風を完全に遮断する' },
-  BATTERY:   { name:'BATTERY',      desc:'落下して金属に触れると周囲へ電撃が連鎖する' },
-  METAL:     { name:'METAL',        desc:'頑丈で電気を通す。電池と組み合わせると危険' },
+  BLOCK: {
+    name:'BLOCK',
+    desc:'爆風を1回受けると壊れる、ただのがれき。自分では爆発しない。',
+    tip:'BLOCKだけを崩しても連鎖は起きない。近くの燃料や爆薬を巻き込めているか確認しよう。',
+  },
+  FUEL: {
+    name:'FUEL TANK',
+    desc:'壊れると自分を中心に3×3マスの爆発を起こし、周囲を巻き込む。',
+    tip:'FUEL同士が近くにあると連鎖が途切れにくい。爆弾から直接届かない燃料も、他の燃料を中継すれば誘爆できる。',
+  },
+  EXPLOSIVE: {
+    name:'EXPLOSIVE',
+    desc:'壊れると自分を中心に5×5マスの大きな爆発を起こす、連鎖の要。',
+    tip:'爆発範囲が広いぶん貴重な部品。盤面のどこにあるか確認して、確実に巻き込めるルートを探そう。',
+  },
+  GAS: {
+    name:'GAS CANISTER',
+    desc:'壊れてもすぐには爆発せず、少し遅れてから3×3マスの爆発を起こす。',
+    tip:'他の爆発が落ち着いたあとに追加で発生するので、離れた場所まで連鎖を伸ばす中継役になる。',
+  },
+  GLASS: {
+    name:'GLASS',
+    desc:'BLOCKと同じくHP1。直撃しなくても、近くの燃料の爆発で生じた炎が届くと割れる。',
+    tip:'爆風が直接届かない場所のGLASSも、隣の燃料タンクが爆発すれば火が回って割れることがある。',
+  },
+  WALL: {
+    name:'WALL',
+    desc:'壊れず、爆風を完全に遮断する。この壁の向こう側には直撃も誘爆も届かない。',
+    tip:'壁の向こうを狙うなら、壁を迂回できる位置に爆弾を置く必要がある。',
+  },
+  BATTERY: {
+    name:'BATTERY',
+    desc:'直撃で壊れるか、落下してMETALに触れると自動で放電する。',
+    tip:'電池は金属に触れた瞬間に効果を発揮する。爆風で落下させてMETALにぶつけよう。',
+  },
+  METAL: {
+    name:'METAL',
+    desc:'HP2で頑丈。BATTERYが触れると感電し、隣接1マスの燃料系を巻き込む。',
+    tip:'METALとBATTERYが隣り合っていれば、どちらかを崩すか落下させるだけで感電が起きる。',
+  },
 };
 
-const TOTAL_STAGES = 50;
+const TOTAL_STAGES = 100;
 // Part unlock tiers: [firstStage, parts]. Stays at the last tier for all later stages.
 const PART_TIERS = [
   [1,  ['BLOCK','FUEL','EXPLOSIVE']],
-  [6,  ['BLOCK','FUEL','EXPLOSIVE','GAS']],
-  [11, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS']],
-  [16, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL']],
-  [21, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL']],
+  [11, ['BLOCK','FUEL','EXPLOSIVE','GAS']],
+  [21, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS']],
+  [31, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL']],
+  [41, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL']],
 ];
 function stagePartsFor(stage){
   let parts = PART_TIERS[0][1];
@@ -61,7 +93,7 @@ function stagePartsFor(stage){
 }
 function isNewPartStage(stage){ return PART_TIERS.some(([first])=>first===stage); }
 function stagePartsIntroducedAt(stage){
-  const prev = stagePartsFor(stage-1<1 ? 0 : stage-1);
+  const prev = stage <= 1 ? [] : stagePartsFor(stage-1);
   return stagePartsFor(stage).filter(p => !prev.includes(p));
 }
 
@@ -81,13 +113,13 @@ function stageDifficultyBand(stage){
 // best achievable result) the threshold should be. Complexity ramps: single simple
 // condition -> single harder condition -> two conditions -> tight two/three conditions.
 function missionTierForStage(stage){
-  if (stage <= 5)  return { metrics:['DESTROY'],           ratio:[0.45,0.60] };
-  if (stage <= 10) return { metrics:['DESTROY','CHAIN'],   ratio:[0.55,0.65] };
-  if (stage <= 20) return { metrics:['CHAIN'],              ratio:[0.60,0.72] };
-  if (stage === 21) return { metrics:['ELECTRIC_ANY'],      ratio:[1,1] };
-  if (stage <= 30) return { metrics:['CHAIN','ELECTRIC'],   ratio:[0.68,0.80] };
-  if (stage <= 40) return { metrics:['COMPOUND2'],          ratio:[0.75,0.85] };
-  if (stage <= 49) return { metrics:['COMPOUND2'],          ratio:[0.85,0.92] };
+  if (stage <= 10) return { metrics:['DESTROY'],           ratio:[0.45,0.60] };
+  if (stage <= 20) return { metrics:['DESTROY','CHAIN'],   ratio:[0.55,0.65] };
+  if (stage <= 40) return { metrics:['CHAIN'],              ratio:[0.60,0.72] };
+  if (stage === 41) return { metrics:['ELECTRIC_ANY'],      ratio:[1,1] };
+  if (stage <= 60) return { metrics:['CHAIN','ELECTRIC'],   ratio:[0.68,0.80] };
+  if (stage <= 80) return { metrics:['COMPOUND2'],          ratio:[0.75,0.85] };
+  if (stage <= 98) return { metrics:['COMPOUND2'],          ratio:[0.85,0.92] };
   return              { metrics:['COMPOUND3'],              ratio:[0.88,0.95] };
 }
 
@@ -1358,20 +1390,27 @@ function showScreen(id){
   document.getElementById(id).classList.add('active');
   gameScreenActive = (id==='screen-game');
 }
-let legendDrawn = false;
 function drawLegend(){
-  if (!legendDrawn){
-    const nodes = document.querySelectorAll('.legend-icon');
-    nodes.forEach(node => {
-      const type = node.dataset.type;
-      const lctx = node.getContext('2d');
-      const size = 72;
-      lctx.clearRect(0,0,size,size);
-      drawIconAt(lctx, makeCell(type), size/2, size/2, size);
+  const wrap = document.getElementById('howto-objects-list');
+  wrap.innerHTML = '';
+  for (const li of LEGEND_ITEMS){
+    const type = li.type;
+    const known = type==='BLOCK' || game.discoveredObjects.includes(type);
+    const info = PART_INFO[type];
+    const item = document.createElement('div');
+    item.className = 'help-obj-item' + (known ? '' : ' undiscovered');
+    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
+      `<div class="help-obj-text">` +
+      `<div class="help-obj-name">${known ? info.name : '???'}</div>` +
+      `<div class="help-obj-desc">${known ? info.desc : 'ステージで見つけると説明が表示されます'}</div>` +
+      (known ? `<div class="help-obj-tip">▸ ${info.tip}</div>` : '') +
+      `</div>`;
+    wrap.appendChild(item);
+    requestAnimationFrame(() => {
+      const c = item.querySelector('canvas');
+      drawIconAt(c.getContext('2d'), makeCell(type), 36, 36, 72);
     });
-    legendDrawn = true;
   }
-  refreshLegendDiscovery();
 }
 function boardHasType(board, type){
   for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){ if (board[y][x] && board[y][x].type===type) return true; }
@@ -1381,15 +1420,6 @@ function flattenBoardTypes(board){
   const set = new Set();
   for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){ if (board[y][x]) set.add(board[y][x].type); }
   return Array.from(set);
-}
-function refreshLegendDiscovery(){
-  document.querySelectorAll('.legend-item').forEach(item => {
-    const type = item.dataset.part;
-    const known = type==='BLOCK' || game.discoveredObjects.includes(type);
-    item.classList.toggle('undiscovered', !known);
-    const info = LEGEND_ITEMS.find(l=>l.type===type);
-    item.querySelector('.legend-name').textContent = known ? (info ? info.label : type) : '???';
-  });
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function refreshHUD(){
@@ -1532,6 +1562,7 @@ function nextTutorial(){
   const info = PART_INFO[currentTutorialType];
   document.getElementById('tutorial-name').textContent = info.name;
   document.getElementById('tutorial-desc').textContent = info.desc;
+  document.getElementById('tutorial-tip').textContent = info.tip ? `▸ ${info.tip}` : '';
   document.getElementById('tutorial-overlay').hidden = false;
 }
 function dismissTutorial(){
@@ -1755,16 +1786,16 @@ function showStageSelect(){
   renderStageGrid();
 }
 function renderChapterTabs(){
-  const wrap = document.getElementById('chapter-tabs');
-  wrap.innerHTML = '';
-  for (let c=1;c<=CHAPTER_COUNT;c++){
-    const start = (c-1)*CHAPTER_SIZE+1;
-    const btn = document.createElement('button');
-    btn.className = 'chapter-tab' + (c===currentChapter?' active':'') + (start>game.unlockedStage?' locked':'');
-    btn.textContent = 'CH'+c;
-    btn.addEventListener('click', () => { currentChapter=c; renderChapterTabs(); renderStageGrid(); });
-    wrap.appendChild(btn);
-  }
+  const start = (currentChapter-1)*CHAPTER_SIZE+1;
+  const end = Math.min(TOTAL_STAGES, currentChapter*CHAPTER_SIZE);
+  document.getElementById('chapter-label').textContent = `CHAPTER ${currentChapter} (${pad2(start)}-${pad2(end)})`;
+  document.getElementById('btn-chapter-prev').disabled = currentChapter <= 1;
+  document.getElementById('btn-chapter-next').disabled = currentChapter >= CHAPTER_COUNT;
+}
+function goToChapter(delta){
+  currentChapter = Math.max(1, Math.min(CHAPTER_COUNT, currentChapter+delta));
+  renderChapterTabs();
+  renderStageGrid();
 }
 function renderStageGrid(){
   const wrap = document.getElementById('stage-grid');
@@ -1794,30 +1825,30 @@ let helpReturnScreen = 'screen-title';
 function showHelp(fromGame){
   helpReturnScreen = fromGame ? 'screen-game' : 'screen-title';
   showScreen('screen-help');
-  document.querySelectorAll('.help-tab').forEach((t,i)=>t.classList.toggle('active', i===0));
-  document.getElementById('help-panel-status').hidden = false;
-  document.getElementById('help-panel-objects').hidden = true;
-  document.getElementById('help-panel-tips').hidden = true;
+  resetTabGroup('help-tabs');
   document.getElementById('help-mission').textContent = run.mission ? run.mission.label : '—';
   const cfg = deriveConfig();
   document.getElementById('help-bomb').textContent = `RANGE ${cfg.radius}`;
   const objWrap = document.getElementById('help-panel-objects');
   objWrap.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'help-objects-grid';
+  const list = document.createElement('div');
+  list.className = 'help-objects-list';
   for (const type of game.discoveredObjects){
     const info = PART_INFO[type];
     if (!info) continue;
     const item = document.createElement('div');
-    item.className = 'legend-item';
-    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas><span class="legend-name">${LEGEND_ITEMS.find(l=>l.type===type)?.label||type}</span>`;
-    grid.appendChild(item);
+    item.className = 'help-obj-item';
+    item.innerHTML = `<canvas class="legend-icon" width="72" height="72"></canvas>` +
+      `<div class="help-obj-text"><div class="help-obj-name">${info.name}</div>` +
+      `<div class="help-obj-desc">${info.desc}</div>` +
+      `<div class="help-obj-tip">▸ ${info.tip}</div></div>`;
+    list.appendChild(item);
     requestAnimationFrame(() => {
       const c = item.querySelector('canvas');
       drawIconAt(c.getContext('2d'), makeCell(type), 36, 36, 72);
     });
   }
-  objWrap.appendChild(grid);
+  objWrap.appendChild(list);
 }
 function hideHelp(){
   showScreen(helpReturnScreen);
@@ -1868,6 +1899,35 @@ function onResultNext(){
   else goToStage(stage+1);
 }
 
+function wireTabGroup(containerId){
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const prefix = containerId.replace(/-tabs$/, '');
+  const tabs = container.querySelectorAll('.help-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.toggle('active', t===tab));
+      const name = tab.dataset.tab;
+      tabs.forEach(t => {
+        const panel = document.getElementById(`${prefix}-panel-${t.dataset.tab}`);
+        if (panel) panel.hidden = t.dataset.tab !== name;
+      });
+    });
+  });
+}
+function resetTabGroup(containerId){
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const prefix = containerId.replace(/-tabs$/, '');
+  const tabs = container.querySelectorAll('.help-tab');
+  if (!tabs.length) return;
+  tabs.forEach((t,i)=>t.classList.toggle('active', i===0));
+  tabs.forEach(t => {
+    const panel = document.getElementById(`${prefix}-panel-${t.dataset.tab}`);
+    if (panel) panel.hidden = t.dataset.tab !== tabs[0].dataset.tab;
+  });
+}
+
 /* ===================== INIT ===================== */
 function initApp(){
   canvas = document.getElementById('board-canvas');
@@ -1885,7 +1945,7 @@ function initApp(){
   });
   document.getElementById('btn-newgame-confirm').addEventListener('click', () => startNewCampaign());
   document.getElementById('btn-newgame-cancel').addEventListener('click', () => showScreen('screen-title'));
-  document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); showScreen('screen-howto'); });
+  document.getElementById('btn-howto').addEventListener('click', () => { drawLegend(); resetTabGroup('howto-tabs'); showScreen('screen-howto'); });
   document.getElementById('btn-howto-back').addEventListener('click', () => { showScreen('screen-title'); });
 
   /* -- gameplay -- */
@@ -1904,16 +1964,11 @@ function initApp(){
 
   /* -- stage select / help / final -- */
   document.getElementById('btn-stgsel-back').addEventListener('click', () => showScreen('screen-title'));
+  document.getElementById('btn-chapter-prev').addEventListener('click', () => goToChapter(-1));
+  document.getElementById('btn-chapter-next').addEventListener('click', () => goToChapter(1));
   document.getElementById('btn-help-back').addEventListener('click', hideHelp);
-  document.querySelectorAll('.help-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.help-tab').forEach(t => t.classList.toggle('active', t===tab));
-      const name = tab.dataset.tab;
-      document.getElementById('help-panel-status').hidden = name!=='status';
-      document.getElementById('help-panel-objects').hidden = name!=='objects';
-      document.getElementById('help-panel-tips').hidden = name!=='tips';
-    });
-  });
+  wireTabGroup('help-tabs');
+  wireTabGroup('howto-tabs');
   document.getElementById('btn-final-stgsel').addEventListener('click', () => { AudioEngine.ensure(); showStageSelect(); });
 
   DEBUG_MODE = /[?&]debug=1/.test(window.location.search);

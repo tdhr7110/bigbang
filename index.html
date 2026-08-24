@@ -43,39 +43,46 @@
       <span class="label">HOW TO PLAY</span>
       <h2 class="howto-title">遊び方</h2>
     </div>
-    <div class="howto-steps">
-      <div class="howto-step">
-        <span class="step-no mono">01</span>
-        <span class="step-text">盤面の空きマスをタップして爆弾を設置（1ステージ1個だけ）</span>
-      </div>
-      <div class="howto-step">
-        <span class="step-no mono">02</span>
-        <span class="step-text">BLOWで起爆。爆風・誘爆・落下・感電が自動で連鎖する</span>
-      </div>
-      <div class="howto-step">
-        <span class="step-no mono">03</span>
-        <span class="step-text">EXPLOSION RATEで星0〜3、MISSIONは星と別の追加目標</span>
-      </div>
-      <div class="howto-step">
-        <span class="step-no mono">04</span>
-        <span class="step-text">星1個以上で次のステージへ。RETRYはいつでも自由</span>
+    <div class="help-tabs" id="howto-tabs">
+      <button class="help-tab active" data-tab="steps">STEPS</button>
+      <button class="help-tab" data-tab="objects">OBJECTS</button>
+      <button class="help-tab" data-tab="tips">TIPS</button>
+    </div>
+    <div class="help-panel" id="howto-panel-steps">
+      <div class="howto-steps">
+        <div class="howto-step">
+          <span class="step-no mono">01</span>
+          <span class="step-text">盤面の空きマスをタップして爆弾を設置（1ステージ1個だけ）</span>
+        </div>
+        <div class="howto-step">
+          <span class="step-no mono">02</span>
+          <span class="step-text">爆風は3×3マス。BLOWで起爆すると、爆風・誘爆・落下・感電が自動で連鎖する</span>
+        </div>
+        <div class="howto-step">
+          <span class="step-no mono">03</span>
+          <span class="step-text">EXPLOSION RATEで星0〜3。MISSIONは星と別の追加目標で、両方は連動しない</span>
+        </div>
+        <div class="howto-step">
+          <span class="step-no mono">04</span>
+          <span class="step-text">星1個以上で次のステージへ。RETRYはいつでも自由、盤面は変わらない</span>
+        </div>
+        <div class="howto-step">
+          <span class="step-no mono">05</span>
+          <span class="step-text">全ステージに、必ず100%（完全クリア）できる置き場所が1つ以上ある</span>
+        </div>
       </div>
     </div>
-    <div class="howto-tips">
-      <span class="label">TIPS</span>
-      <div class="tip-row">中央ほど爆風を余さず使える。端や角は一部が盤面の外へ逃げる（設置中に点線の枠で範囲を確認できる）</div>
-      <div class="tip-row">金属のとなりにバッテリーが落ちると感電し、周囲の爆薬・燃料・ガスへ飛び火する</div>
-      <div class="tip-row">壊れない壁は爆風を完全に遮断する。裏側は安全地帯になる</div>
+    <div class="help-panel" id="howto-panel-objects" hidden>
+      <div class="help-objects-list" id="howto-objects-list"></div>
     </div>
-    <div class="legend-grid" id="legend-grid">
-      <div class="legend-item" data-part="BLOCK"><canvas class="legend-icon" data-type="BLOCK" width="72" height="72"></canvas><span class="legend-name">ブロック</span></div>
-      <div class="legend-item" data-part="GLASS"><canvas class="legend-icon" data-type="GLASS" width="72" height="72"></canvas><span class="legend-name">ガラス</span></div>
-      <div class="legend-item" data-part="FUEL"><canvas class="legend-icon" data-type="FUEL" width="72" height="72"></canvas><span class="legend-name">燃料</span></div>
-      <div class="legend-item" data-part="EXPLOSIVE"><canvas class="legend-icon" data-type="EXPLOSIVE" width="72" height="72"></canvas><span class="legend-name">爆薬</span></div>
-      <div class="legend-item" data-part="BATTERY"><canvas class="legend-icon" data-type="BATTERY" width="72" height="72"></canvas><span class="legend-name">電池</span></div>
-      <div class="legend-item" data-part="GAS"><canvas class="legend-icon" data-type="GAS" width="72" height="72"></canvas><span class="legend-name">ガス</span></div>
-      <div class="legend-item" data-part="METAL"><canvas class="legend-icon" data-type="METAL" width="72" height="72"></canvas><span class="legend-name">金属</span></div>
-      <div class="legend-item" data-part="WALL"><canvas class="legend-icon" data-type="WALL" width="72" height="72"></canvas><span class="legend-name">壁</span></div>
+    <div class="help-panel" id="howto-panel-tips" hidden>
+      <div class="tip-row"><b>爆風は3×3マスだけ。</b>爆弾単体では狭い範囲しか壊せない。FUELやEXPLOSIVEを巻き込んで連鎖させることが前提。</div>
+      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> 爆風は壁を貫通しない。壁の向こう側を壊すには、壁を回り込める角度から当てる必要がある。</div>
+      <div class="tip-row"><b>ガラス(GLASS)が直撃範囲外にある場合 →</b> 近くの燃料タンクが爆発すれば、火が回って割れることがある。直撃だけが手段ではない。</div>
+      <div class="tip-row"><b>電池(BATTERY)と金属(METAL)が隣接している場合 →</b> どちらかを崩す・落下させるだけで自動的に感電し、隣接1マスの燃料系を巻き込む。</div>
+      <div class="tip-row"><b>ガス(GAS CANISTER)を壊した場合 →</b> その場ではなく少し遅れて爆発する。他の爆発が落ち着いた後に離れた場所へ連鎖を伸ばせる。</div>
+      <div class="tip-row"><b>置く前に確認 →</b> 爆弾を置くとDIRECT HITで直撃する部品の種類と数だけが見える。最終的な結果はBLOWするまでわからない。</div>
+      <div class="tip-row"><b>迷ったら →</b> ゲーム画面右上の「？」からいつでもこのTIPSとMISSION、発見済みの部品一覧を確認できる。</div>
     </div>
     <button id="btn-howto-back" class="btn btn-large">BACK</button>
   </section>
@@ -86,7 +93,11 @@
       <span class="label">STAGE SELECT</span>
       <div class="stgsel-level">SCORE <span id="stgsel-score" class="mono">0</span></div>
     </div>
-    <div class="chapter-tabs" id="chapter-tabs"></div>
+    <div class="chapter-pager">
+      <button id="btn-chapter-prev" class="chapter-arrow">‹</button>
+      <span class="chapter-label" id="chapter-label">CHAPTER 1</span>
+      <button id="btn-chapter-next" class="chapter-arrow">›</button>
+    </div>
     <div class="stage-grid" id="stage-grid"></div>
     <button id="btn-stgsel-back" class="btn btn-large">BACK</button>
   </section>
@@ -119,6 +130,7 @@
           <span class="label">NEW OBJECT</span>
           <div class="tutorial-name mono" id="tutorial-name"></div>
           <div class="tutorial-desc" id="tutorial-desc"></div>
+          <div class="tutorial-tip" id="tutorial-tip"></div>
           <button id="tutorial-dismiss" class="btn btn-accent">OK</button>
         </div>
       </div>
@@ -146,7 +158,7 @@
   <section id="screen-help" class="screen">
     <div class="help-head">
       <span class="label">HELP</span>
-      <div class="help-tabs">
+      <div class="help-tabs" id="help-tabs">
         <button class="help-tab active" data-tab="status">STATUS</button>
         <button class="help-tab" data-tab="objects">OBJECTS</button>
         <button class="help-tab" data-tab="tips">TIPS</button>
@@ -158,9 +170,13 @@
     </div>
     <div class="help-panel" id="help-panel-objects" hidden></div>
     <div class="help-panel" id="help-panel-tips" hidden>
-      <div class="tip-row">爆薬・燃料の近くから連鎖を始めると、遠くまで連鎖を伸ばしやすい</div>
-      <div class="tip-row">中央ほど爆風を余さず使える。端や角は一部が盤面外へ逃げる</div>
-      <div class="tip-row">金属+電池は感電の起点。壊れない壁の裏は安全地帯</div>
+      <div class="tip-row"><b>爆風は3×3マスだけ。</b>爆弾単体では狭い範囲しか壊せない。FUELやEXPLOSIVEを巻き込んで連鎖させることが前提。</div>
+      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> 爆風は壁を貫通しない。壁の向こう側を壊すには、壁を回り込める角度から当てる必要がある。</div>
+      <div class="tip-row"><b>ガラス(GLASS)が直撃範囲外にある場合 →</b> 近くの燃料タンクが爆発すれば、火が回って割れることがある。直撃だけが手段ではない。</div>
+      <div class="tip-row"><b>電池(BATTERY)と金属(METAL)が隣接している場合 →</b> どちらかを崩す・落下させるだけで自動的に感電し、隣接1マスの燃料系を巻き込む。</div>
+      <div class="tip-row"><b>ガス(GAS CANISTER)を壊した場合 →</b> その場ではなく少し遅れて爆発する。他の爆発が落ち着いた後に離れた場所へ連鎖を伸ばせる。</div>
+      <div class="tip-row"><b>連鎖が途中で止まった場合 →</b> 爆薬・燃料・ガスの間隔が離れすぎている可能性がある。RETRYでは前回の爆風が届かなかった範囲がヒントとして表示される。</div>
+      <div class="tip-row"><b>置く前に確認 →</b> 爆弾を置くとDIRECT HITで直撃する部品の種類と数だけが見える。最終的な結果はBLOWするまでわからない。</div>
     </div>
     <button id="btn-help-back" class="btn btn-large">CLOSE</button>
   </section>
