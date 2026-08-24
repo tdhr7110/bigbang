@@ -55,31 +55,51 @@ const PART_INFO = {
   METAL:     { name:'METAL',        desc:'頑丈で電気を通す。電池と組み合わせると危険' },
 };
 
-const STAGE_PARTS = {
-  1: ['BLOCK','FUEL','EXPLOSIVE'],
-  2: ['BLOCK','FUEL','EXPLOSIVE','GAS'],
-  3: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS'],
-  4: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL'],
-  5: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
-  6: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
-  7: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
-  8: ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL'],
-};
-function stagePartsFor(stage){ return STAGE_PARTS[Math.min(8,Math.max(1,stage))]; }
+const TOTAL_STAGES = 50;
+// Part unlock tiers: [firstStage, parts]. Stays at the last tier for all later stages.
+const PART_TIERS = [
+  [1,  ['BLOCK','FUEL','EXPLOSIVE']],
+  [6,  ['BLOCK','FUEL','EXPLOSIVE','GAS']],
+  [11, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS']],
+  [16, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL']],
+  [21, ['BLOCK','FUEL','EXPLOSIVE','GAS','GLASS','WALL','BATTERY','METAL']],
+];
+function stagePartsFor(stage){
+  let parts = PART_TIERS[0][1];
+  for (const [first, list] of PART_TIERS){ if (stage >= first) parts = list; }
+  return parts;
+}
+function isNewPartStage(stage){ return PART_TIERS.some(([first])=>first===stage); }
+function stagePartsIntroducedAt(stage){
+  const prev = stagePartsFor(stage-1<1 ? 0 : stage-1);
+  return stagePartsFor(stage).filter(p => !prev.includes(p));
+}
 
-// solveMin/solveMax: fraction of empty cells that should satisfy the stage mission.
-// targetRatio: mission threshold as [min,max] fraction of the best possible result.
-const STAGE_DIFFICULTY = {
-  1: { solveMin:0.25, solveMax:0.55, targetRatio:[0.60,0.70], metric:'DESTROY' },
-  2: { solveMin:0.18, solveMax:0.40, targetRatio:[0.70,0.75], metric:'CHAIN' },
-  3: { solveMin:0.14, solveMax:0.30, targetRatio:[0.75,0.80], metric:'CHAIN' },
-  4: { solveMin:0.09, solveMax:0.25, targetRatio:[0.80,0.85], metric:'DESTROY' },
-  5: { solveMin:0.06, solveMax:0.20, targetRatio:[1,1],       metric:'ELECTRIC_ANY' },
-  6: { solveMin:0.05, solveMax:0.16, targetRatio:[0.85,0.90], metric:'CHAIN' },
-  7: { solveMin:0.03, solveMax:0.12, targetRatio:[0.85,0.92], metric:'COMPOUND' },
-  8: { solveMin:0.01, solveMax:0.06, targetRatio:[0.90,0.95], metric:'COMPOUND' },
-};
-function stageDifficulty(stage){ return STAGE_DIFFICULTY[Math.min(8,Math.max(1,stage))]; }
+// Fraction of empty cells that should be able to reach >=star1 (50% explosion rate).
+// Interpolated across the 50-stage curve, then eased on stages that just unlocked a
+// new part (per spec: ease up right when a new mechanic appears).
+function stageDifficultyBand(stage){
+  const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
+  const lerp = (a,b) => a+(b-a)*t;
+  let min = lerp(0.40, 0.01);
+  let max = lerp(0.65, 0.06);
+  if (isNewPartStage(stage)){ min *= 1.7; max *= 1.8; }
+  if (stage <= 3){ min = Math.max(min, 0.40); max = Math.max(max, 0.65); }
+  return { min, max };
+}
+// Which mission metric(s) to offer at this stage, and how ambitious (fraction of the
+// best achievable result) the threshold should be. Complexity ramps: single simple
+// condition -> single harder condition -> two conditions -> tight two/three conditions.
+function missionTierForStage(stage){
+  if (stage <= 5)  return { metrics:['DESTROY'],           ratio:[0.45,0.60] };
+  if (stage <= 10) return { metrics:['DESTROY','CHAIN'],   ratio:[0.55,0.65] };
+  if (stage <= 20) return { metrics:['CHAIN'],              ratio:[0.60,0.72] };
+  if (stage === 21) return { metrics:['ELECTRIC_ANY'],      ratio:[1,1] };
+  if (stage <= 30) return { metrics:['CHAIN','ELECTRIC'],   ratio:[0.68,0.80] };
+  if (stage <= 40) return { metrics:['COMPOUND2'],          ratio:[0.75,0.85] };
+  if (stage <= 49) return { metrics:['COMPOUND2'],          ratio:[0.85,0.92] };
+  return              { metrics:['COMPOUND3'],              ratio:[0.88,0.95] };
+}
 
 function isExplosiveFamily(t){ return t==='FUEL'||t==='EXPLOSIVE'||t==='GAS'; }
 
@@ -108,16 +128,20 @@ function hashSeed(str){
 function stageWeights(n){
   const parts = stagePartsFor(n);
   const has = (t) => parts.includes(t);
-  const t = (n-1)/7;
+  // Later stages get SPARSER, not denser: with a fixed blast radius, a dense board
+  // makes almost every placement hit something good (too easy, high star1 ratio).
+  // A sparse board makes most placements hit little, so only a few well-read cells
+  // reach the chain-enabling objects - that's what produces a narrow solution set.
+  const t = Math.max(0, Math.min(1, (n-1)/(TOTAL_STAGES-1)));
   const lerp = (a,b) => a+(b-a)*t;
-  const w = { EMPTY: lerp(0.30,0.20), BLOCK: lerp(0.28,0.14) };
-  if (has('GLASS'))     w.GLASS = lerp(0.10,0.09);
-  if (has('FUEL'))      w.FUEL = lerp(0.07,0.13);
-  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.07,0.15);
-  if (has('BATTERY'))   w.BATTERY = lerp(0.06,0.09);
-  if (has('GAS'))       w.GAS = lerp(0.04,0.09);
-  if (has('METAL'))     w.METAL = lerp(0.05,0.08);
-  if (has('WALL'))      w.WALL = lerp(0.03,0.03);
+  const w = { EMPTY: lerp(0.28,0.58), BLOCK: lerp(0.34,0.16) };
+  if (has('GLASS'))     w.GLASS = lerp(0.09,0.05);
+  if (has('FUEL'))      w.FUEL = lerp(0.08,0.06);
+  if (has('EXPLOSIVE')) w.EXPLOSIVE = lerp(0.08,0.06);
+  if (has('BATTERY'))   w.BATTERY = lerp(0.05,0.04);
+  if (has('GAS'))       w.GAS = lerp(0.04,0.03);
+  if (has('METAL'))     w.METAL = lerp(0.04,0.04);
+  if (has('WALL'))      w.WALL = lerp(0.02,0.03);
   return w;
 }
 function weightedPick(weights, rng){
@@ -178,7 +202,7 @@ function generateBoardRaw(stageIndex, rng){
   const parts = stagePartsFor(stageIndex);
   const explosiveFamily = ['FUEL','EXPLOSIVE'].filter(t=>parts.includes(t));
   if (parts.includes('GAS')) explosiveFamily.push('GAS');
-  ensureMinCount(board, explosiveFamily, 2+Math.floor(stageIndex/2), rng);
+  ensureMinCount(board, explosiveFamily, 2, rng);
   if (parts.includes('BATTERY') && parts.includes('METAL')) ensureMetalBatteryPair(board, rng);
   return board;
 }
@@ -462,6 +486,7 @@ function exhaustiveSearch(board, cfg){
   const best = byScore[0] || null;
   const scoresAsc = results.map(r=>r.stats.score).sort((a,b)=>a-b);
   const median = scoresAsc.length ? scoresAsc[Math.floor((scoresAsc.length-1)/2)] : 0;
+  const maxDestroyCount = results.reduce((m,r)=>Math.max(m,r.stats.destroyCount),0);
   let centerBaseline = null;
   if (results.length){
     let bestD = Infinity;
@@ -470,7 +495,18 @@ function exhaustiveSearch(board, cfg){
       if (d<bestD){ bestD=d; centerBaseline=r; }
     }
   }
-  return { empties: empties.length, results, best, median, centerBaseline };
+  return { empties: empties.length, results, best, median, centerBaseline, maxDestroyCount };
+}
+function explosionRateFor(destroyCount, maxDestroyCount){
+  if (maxDestroyCount <= 0) return destroyCount > 0 ? 1 : 0;
+  return Math.max(0, Math.min(1, destroyCount / maxDestroyCount));
+}
+function starsForRate(rate){
+  const pct = rate * 100;
+  if (pct >= 95) return 3;
+  if (pct >= 75) return 2;
+  if (pct >= 50) return 1;
+  return 0;
 }
 
 /* ===================== MISSION SYSTEM ===================== */
@@ -499,31 +535,51 @@ function evaluateMission(stats, mission){
   return { ok: parts.every(p=>p.ok), parts };
 }
 function avg(range){ return (range[0]+range[1])/2; }
+// Every threshold below is clamped so it never exceeds what `best` (the top-score
+// candidate) actually achieved - otherwise a weak/sparse board could derive a
+// mission that not even the best possible placement can satisfy.
+function clampDestroyTarget(best, ratio){
+  const bestPct = best.destroyRate*100;
+  const raw = Math.round(bestPct*ratio/5)*5;
+  return Math.max(5, Math.min(raw, Math.floor(bestPct)));
+}
+function clampCountTarget(bestValue, ratio, floor){
+  if (bestValue <= 0) return 0;
+  return Math.max(Math.min(floor, bestValue), Math.min(Math.round(bestValue*ratio), bestValue));
+}
 function pickMission(stage, search){
-  const diff = stageDifficulty(stage);
+  const tier = missionTierForStage(stage);
   const best = search.best.stats;
-  const ratio = avg(diff.targetRatio);
+  const ratio = avg(tier.ratio);
+  const metrics = tier.metrics;
 
-  if (diff.metric === 'ELECTRIC_ANY'){
-    return { parts:[{type:'ELECTRIC', threshold:1}], label:'ELECTRICを1回発生させろ' };
+  if (metrics[0] === 'ELECTRIC_ANY'){
+    return { parts:[{type:'ELECTRIC', threshold:1}], label:'ELECTRICを1回発生させよ' };
   }
-  if (diff.metric === 'COMPOUND'){
-    const parts = [];
-    const destroyTarget = Math.min(95, Math.max(30, Math.round(best.destroyRate*100*ratio/5)*5));
-    parts.push({type:'DESTROY', threshold:destroyTarget});
-    if (best.electricCount >= 1){
-      parts.push({type:'ELECTRIC', threshold: Math.max(1, Math.min(best.electricCount, 2))});
-    } else {
-      const chainTarget = Math.max(4, Math.round(best.chainCount*ratio));
-      parts.push({type:'CHAIN', threshold: chainTarget});
-    }
-    return { parts, label: parts.map(p=>missionPartLabel(p)).join(' + ') };
+  if (metrics[0] === 'COMPOUND3'){
+    const parts = [{type:'DESTROY', threshold: clampDestroyTarget(best, ratio)}];
+    parts.push({type:'CHAIN', threshold: clampCountTarget(best.chainCount, ratio, 4)});
+    parts.push(best.electricCount >= 1
+      ? {type:'ELECTRIC', threshold: Math.max(1, Math.min(best.electricCount, 2))}
+      : {type:'BURST', threshold: clampCountTarget(best.maxSimultaneous, ratio, 3)});
+    return { parts, label: parts.map(missionPartLabel).join(' + ') };
   }
-  if (diff.metric === 'CHAIN'){
-    const t = Math.max(3, Math.round(best.chainCount*ratio));
+  if (metrics[0] === 'COMPOUND2'){
+    const parts = [{type:'DESTROY', threshold: clampDestroyTarget(best, ratio)}];
+    parts.push(best.electricCount >= 1
+      ? {type:'ELECTRIC', threshold: Math.max(1, Math.min(best.electricCount, 2))}
+      : {type:'CHAIN', threshold: clampCountTarget(best.chainCount, ratio, 4)});
+    return { parts, label: parts.map(missionPartLabel).join(' + ') };
+  }
+  if (metrics.includes('ELECTRIC') && best.electricCount >= 1){
+    const t = Math.max(1, Math.min(best.electricCount, 2));
+    return { parts:[{type:'ELECTRIC', threshold:t}], label:missionPartLabel({type:'ELECTRIC',threshold:t}) };
+  }
+  if (metrics.includes('CHAIN')){
+    const t = clampCountTarget(best.chainCount, ratio, 3);
     return { parts:[{type:'CHAIN', threshold:t}], label:`CHAIN ${t}以上を達成せよ` };
   }
-  const t = Math.min(95, Math.max(30, Math.round(best.destroyRate*100*ratio/5)*5));
+  const t = clampDestroyTarget(best, ratio);
   return { parts:[{type:'DESTROY', threshold:t}], label:`破壊率${t}%以上を達成せよ` };
 }
 
@@ -531,43 +587,64 @@ function pickMission(stage, search){
 function evaluateBoardQuality(stage, search, mission){
   const empties = search.empties;
   if (empties < 5 || !search.best) return { ok:false, reason:'空きマスが少なすぎる' };
+
+  const rateOf = (r) => explosionRateFor(r.stats.destroyCount, search.maxDestroyCount);
+  const star1Results = search.results.filter(r => starsForRate(rateOf(r)) >= 1);
+  const star2Results = search.results.filter(r => starsForRate(rateOf(r)) >= 2);
+  const star1Count = star1Results.length;
+  const star1Ratio = star1Count/empties;
+  const star2Ratio = star2Results.length/empties;
+
   const solveResults = search.results.filter(r => evaluateMission(r.stats, mission).ok);
   const solveCount = solveResults.length;
-  const solveRatio = solveCount/empties;
   const bestSolving = solveResults.length ? solveResults.slice().sort((a,b)=>b.stats.score-a.stats.score)[0] : null;
-  if (solveCount === 0) return { ok:false, reason:'ミッションを達成できる配置が存在しない', solveCount, solveRatio, bestSolving };
-  const diff = stageDifficulty(stage);
-  if (solveRatio < diff.solveMin*0.5) return { ok:false, reason:'正解候補が少なすぎる', solveCount, solveRatio, bestSolving };
-  if (solveRatio > diff.solveMax*1.6) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', solveCount, solveRatio, bestSolving };
+
+  if (star1Count === 0) return { ok:false, reason:'星1を取得できる配置が存在しない', star1Count, star1Ratio, solveCount, bestSolving };
+  if (solveCount === 0) return { ok:false, reason:'ミッションを達成できる配置が存在しない', star1Count, star1Ratio, solveCount, bestSolving };
+
+  const band = stageDifficultyBand(stage);
+  if (star1Ratio < band.min*0.5) return { ok:false, reason:'正解候補が少なすぎる', star1Count, star1Ratio, solveCount, bestSolving };
+  if (star1Ratio > band.max + 0.30) return { ok:false, reason:'正解候補が多すぎる（簡単すぎる）', star1Count, star1Ratio, solveCount, bestSolving };
+  if (stage > 3 && star2Ratio > 0.8 && empties > 6) return { ok:false, reason:'どこに置いても星2以上になる', star1Count, star1Ratio, solveCount, bestSolving };
+
   const best = search.best.stats.score;
   const median = search.median;
-  if (best > 0 && (best-median) < best*0.12) return { ok:false, reason:'最適解と中央値の差が小さい', solveCount, solveRatio, bestSolving };
-  const centerScore = search.centerBaseline ? search.centerBaseline.stats.score : 0;
-  if (best > 0 && centerScore >= best*0.97 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', solveCount, solveRatio, bestSolving };
-  const newParts = (STAGE_PARTS[stage] || []).filter(p => !(STAGE_PARTS[stage-1]||[]).includes(p));
-  if (newParts.length){
-    const usedNew = newParts.some(p => search.best.stats.destroyedTypes.has(p));
-    if (!usedNew) return { ok:false, reason:'新部品が最適ルートに関係していない', solveCount, solveRatio, bestSolving };
+  if (stage > 3){
+    if (best > 0 && (best-median) < best*0.10) return { ok:false, reason:'最適配置と適当な配置の差が小さい', star1Count, star1Ratio, solveCount, bestSolving };
+    const centerScore = search.centerBaseline ? search.centerBaseline.stats.score : 0;
+    if (best > 0 && centerScore >= best*0.97 && empties > 8) return { ok:false, reason:'中央付近がほぼ最適解と同等', star1Count, star1Ratio, solveCount, bestSolving };
   }
-  if (search.best.stats.chainCount < 2 && stage >= 2) return { ok:false, reason:'最適解でも連鎖が起きない', solveCount, solveRatio, bestSolving };
-  return { ok:true, solveCount, solveRatio, best, median, bestSolving };
+
+  const newParts = stagePartsIntroducedAt(stage);
+  if (newParts.length){
+    const usedNew = star1Results.some(r => newParts.some(p => r.stats.destroyedTypes.has(p)));
+    if (!usedNew) return { ok:false, reason:'新部品が攻略に関係していない', star1Count, star1Ratio, solveCount, bestSolving };
+  }
+  if (search.best.stats.chainCount < 2 && stage >= 4) return { ok:false, reason:'最適解でも連鎖が起きない', star1Count, star1Ratio, solveCount, bestSolving };
+
+  return { ok:true, star1Count, star1Ratio, solveCount, best, median, bestSolving };
 }
 function buildFallbackBoard(stage, rng){
   const parts = stagePartsFor(stage);
+  const t = Math.max(0, Math.min(1, (stage-1)/(TOTAL_STAGES-1)));
   const board = [];
   for (let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push(null); board.push(row); }
-  const fillerWeights = { EMPTY:0.55, BLOCK:0.35 };
-  if (parts.includes('GLASS')) fillerWeights.GLASS = 0.10;
+  const glassW = parts.includes('GLASS') ? 0.06 : 0;
+  const emptyW = 0.30 + 0.55*t;
+  const fillerWeights = { EMPTY: emptyW, BLOCK: Math.max(0.1, 1-emptyW-glassW) };
+  if (glassW) fillerWeights.GLASS = glassW;
   for (let y=0;y<ROWS;y++) for (let x=0;x<COLS;x++){
     const type = weightedPick(fillerWeights, rng);
     board[y][x] = type==='EMPTY' ? null : makeCell(type);
   }
+  // a single guaranteed trigger, kept minimal at higher stages so the fallback
+  // board doesn't hand out an obvious multi-cell cluster of "also works" solutions
   const cx = 5, cy = 2;
   board[cy][cx] = makeCell('FUEL');
-  if (parts.includes('EXPLOSIVE')) board[cy][cx+1] = makeCell('EXPLOSIVE');
   board[cy][cx-1] = null;
-  if (parts.includes('WALL')) board[cy+1][cx] = makeCell('WALL');
-  if (parts.includes('GAS')) board[cy][Math.min(cx+2,COLS-1)] = makeCell('GAS');
+  if (stage <= 10 && parts.includes('EXPLOSIVE')) board[cy][cx+1] = makeCell('EXPLOSIVE');
+  if (stage >= 16 && parts.includes('WALL')) board[cy+1][cx] = makeCell('WALL');
+  if (stage <= 15 && parts.includes('GAS')) board[cy][Math.min(cx+2,COLS-1)] = makeCell('GAS');
   if (parts.includes('BATTERY') && parts.includes('METAL')){
     board[cy+2][cx] = makeCell('METAL');
     board[cy+1][cx-1] = makeCell('BATTERY');
@@ -1047,6 +1124,21 @@ function popChain(text){
   void el.offsetWidth;
   el.classList.add('pop');
 }
+// Clears all transient playback/effect state. Internal stats (run.mission,
+// run.search, stats.chainCount, etc.) are untouched - only display-layer
+// leftovers from a previous BLOW are cleared here.
+function resetPlaybackState(){
+  effects = [];
+  fallAnim = null;
+  shake = { mag:0, total:0, until:0 };
+  camScale = 1; camScaleTarget = 1;
+  runningChainTotal = 0;
+  const popupEl = document.getElementById('chain-popup');
+  if (popupEl){
+    popupEl.classList.remove('pop');
+    popupEl.textContent = '';
+  }
+}
 function playStep(step){
   return new Promise(resolve => {
     if (step.kind==='explosion'){
@@ -1081,17 +1173,17 @@ function playStep(step){
 async function playSteps(steps){ for (const s of steps) await playStep(s); }
 
 async function runBlow(){
+  resetPlaybackState();
   uiState = 'PLAYBACK';
   document.getElementById('btn-blow').disabled = true;
   AudioEngine.ensure();
   const cfg = deriveConfig(run.bombConfig.levels);
   const result = simulate(run.board, run.bombPos, cfg);
-  runningChainTotal = 0;
-  camScaleTarget = 1;
   await playSteps(result.steps);
   currentBoard = result.finalBoard;
   camScaleTarget = 1;
   await new Promise(r => setTimeout(r, 260));
+  resetPlaybackState();
   showResult(result.stats, result.eventLog);
 }
 
@@ -1194,6 +1286,7 @@ function analyzeStopReason(remainingObjects, cfg, eventLog){
 
 /* ---- mission-aware result screen ---- */
 function showResult(stats, eventLog){
+  resetPlaybackState();
   uiState = 'IDLE';
   showScreen('screen-result');
   const evalResult = evaluateMission(stats, run.mission);
@@ -1294,9 +1387,7 @@ function dismissTutorial(){
   if (tutorialQueue.length) setTimeout(nextTutorial, 900);
 }
 function showTutorialIfNeeded(){
-  const stage = run.stage;
-  const prevParts = STAGE_PARTS[stage-1] || [];
-  const newParts = STAGE_PARTS[stage].filter(p => !prevParts.includes(p) && p !== 'BLOCK');
+  const newParts = stagePartsIntroducedAt(run.stage).filter(p => p !== 'BLOCK');
   const toShow = newParts.filter(p => boardHasType(run.board, p) && !run.tutorialShownThisRun.has(p));
   if (!toShow.length) return;
   tutorialQueue = toShow.slice();
@@ -1358,6 +1449,7 @@ function loadStageBoard(stage){
   currentBoard = run.board;
 }
 function enterStageScreen(){
+  resetPlaybackState();
   uiState = 'SELECT';
   showScreen('screen-game');
   requestAnimationFrame(resizeCanvas);
@@ -1374,6 +1466,7 @@ function proceedToNextStage(){
   enterStageScreen();
 }
 function retrySameStage(){
+  resetPlaybackState();
   run.bombPos = null;
   currentBoard = run.board;
   uiState = 'SELECT';
@@ -1447,6 +1540,7 @@ function initApp(){
   if (DEBUG_MODE){
     document.getElementById('debug-panel').style.display = 'block';
     window.__run = run;
+    window.__debug = { getEffects: () => effects, getChainPopupText: () => document.getElementById('chain-popup').textContent };
   }
 
   showScreen('screen-title');
@@ -1460,7 +1554,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     simulate, exhaustiveSearch, generateStage, generateBoardRaw, deriveConfig,
     pickMission, evaluateMission, evaluateBoardQuality, hashSeed, mulberry32,
-    stagePartsFor, stageDifficulty, STAGE_PARTS, STAGE_DIFFICULTY, OBJ,
+    stagePartsFor, stageDifficultyBand, missionTierForStage, stagePartsIntroducedAt,
+    isNewPartStage, explosionRateFor, starsForRate, OBJ, TOTAL_STAGES,
     ROWS, COLS, MAX_GENERATION_ATTEMPTS, buildFallbackBoard, countDestructible,
   };
 }
