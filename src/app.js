@@ -839,56 +839,89 @@ function generateStage(stage, cfg, runSeed){
 /* ===================== AUDIO ===================== */
 const AudioEngine = (() => {
   let actx;
+  let unsupported = false;
+  // Any failure here (missing AudioContext, permissions-policy blocking it,
+  // a suspended-state resume() rejecting, etc.) must never throw out into a
+  // caller - every call site is a UI click handler, and an uncaught error
+  // there would silently kill the rest of that handler (navigation, saves...)
+  // along with the sound. So AudioEngine swallows its own failures and just
+  // stays silent instead of breaking the game.
   function ensure(){
-    if (!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
-    if (actx.state==='suspended') actx.resume();
-    return actx;
+    if (unsupported) return null;
+    try {
+      if (!actx){
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor){ unsupported = true; return null; }
+        actx = new Ctor();
+        // Some mobile browsers only fully unlock output if a sound is
+        // actually started (not just resume()'d) inside the same user
+        // gesture that created the context, so fire one silent buffer now.
+        const kick = actx.createBufferSource();
+        kick.buffer = actx.createBuffer(1, 1, actx.sampleRate);
+        kick.connect(actx.destination);
+        kick.start(0);
+      }
+      if (actx.state==='suspended') actx.resume().catch(()=>{});
+      return actx;
+    } catch (e){
+      unsupported = true;
+      return null;
+    }
   }
   function boom(power=1){
-    const c = ensure(); const now = c.currentTime;
-    const dur = 0.32 + Math.min(power,6)*0.03;
-    const osc = c.createOscillator(); const gain = c.createGain();
-    osc.type='sine';
-    osc.frequency.setValueAtTime(120, now);
-    osc.frequency.exponentialRampToValueAtTime(36, now+dur);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.55, now+0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now+dur);
-    osc.connect(gain); gain.connect(c.destination);
-    osc.start(now); osc.stop(now+dur+0.02);
+    try {
+      const c = ensure(); if (!c) return;
+      const now = c.currentTime;
+      const dur = 0.32 + Math.min(power,6)*0.03;
+      const osc = c.createOscillator(); const gain = c.createGain();
+      osc.type='sine';
+      osc.frequency.setValueAtTime(120, now);
+      osc.frequency.exponentialRampToValueAtTime(36, now+dur);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.55, now+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      osc.connect(gain); gain.connect(c.destination);
+      osc.start(now); osc.stop(now+dur+0.02);
 
-    const bufSize = Math.floor(c.sampleRate*0.12);
-    const buf = c.createBuffer(1,bufSize,c.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i=0;i<bufSize;i++) data[i] = (Math.random()*2-1)*(1-i/bufSize);
-    const noise = c.createBufferSource(); noise.buffer=buf;
-    const ngain = c.createGain();
-    ngain.gain.setValueAtTime(0.45, now);
-    ngain.gain.exponentialRampToValueAtTime(0.001, now+0.12);
-    const filt = c.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=1200;
-    noise.connect(filt); filt.connect(ngain); ngain.connect(c.destination);
-    noise.start(now);
+      const bufSize = Math.floor(c.sampleRate*0.12);
+      const buf = c.createBuffer(1,bufSize,c.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i=0;i<bufSize;i++) data[i] = (Math.random()*2-1)*(1-i/bufSize);
+      const noise = c.createBufferSource(); noise.buffer=buf;
+      const ngain = c.createGain();
+      ngain.gain.setValueAtTime(0.45, now);
+      ngain.gain.exponentialRampToValueAtTime(0.001, now+0.12);
+      const filt = c.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=1200;
+      noise.connect(filt); filt.connect(ngain); ngain.connect(c.destination);
+      noise.start(now);
+    } catch (e){ /* never let a sound glitch break gameplay */ }
   }
   function zap(){
-    const c = ensure(); const now = c.currentTime;
-    const osc = c.createOscillator(); osc.type='sawtooth';
-    osc.frequency.setValueAtTime(900, now);
-    osc.frequency.exponentialRampToValueAtTime(140, now+0.12);
-    const gain = c.createGain();
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.exponentialRampToValueAtTime(0.22, now+0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
-    osc.connect(gain); gain.connect(c.destination);
-    osc.start(now); osc.stop(now+0.16);
+    try {
+      const c = ensure(); if (!c) return;
+      const now = c.currentTime;
+      const osc = c.createOscillator(); osc.type='sawtooth';
+      osc.frequency.setValueAtTime(900, now);
+      osc.frequency.exponentialRampToValueAtTime(140, now+0.12);
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.22, now+0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
+      osc.connect(gain); gain.connect(c.destination);
+      osc.start(now); osc.stop(now+0.16);
+    } catch (e){}
   }
   function tick(){
-    const c = ensure(); const now = c.currentTime;
-    const osc = c.createOscillator(); osc.type='square'; osc.frequency.value=520;
-    const gain = c.createGain();
-    gain.gain.setValueAtTime(0.07, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
-    osc.connect(gain); gain.connect(c.destination);
-    osc.start(now); osc.stop(now+0.06);
+    try {
+      const c = ensure(); if (!c) return;
+      const now = c.currentTime;
+      const osc = c.createOscillator(); osc.type='square'; osc.frequency.value=520;
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(0.07, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
+      osc.connect(gain); gain.connect(c.destination);
+      osc.start(now); osc.stop(now+0.06);
+    } catch (e){}
   }
   return { ensure, boom, zap, tick };
 })();
