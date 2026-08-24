@@ -30,6 +30,51 @@
     </div>
   </section>
 
+  <!-- ===================== TUTORIAL ===================== -->
+  <section id="screen-tutorial" class="screen">
+    <div class="howto-head">
+      <span class="label">TUTORIAL</span>
+      <h2 class="howto-title">仕組みを学ぶ</h2>
+    </div>
+    <div class="help-tabs" id="tutorial-tabs">
+      <button class="help-tab active" data-tab="guide">GUIDE</button>
+      <button class="help-tab" data-tab="practice">PRACTICE</button>
+    </div>
+    <div class="help-panel" id="tutorial-panel-guide">
+      <div class="guide-section">
+        <div class="guide-heading">設置物</div>
+        <div class="help-objects-list" id="tutorial-objects-list"></div>
+      </div>
+      <div class="guide-section">
+        <div class="guide-heading">連鎖（誘爆）の仕組み</div>
+        <div class="tip-row">爆弾の直撃は、置いたマスを中心に3×3マス。範囲内の壊せる物すべてに爆風が届く。</div>
+        <div class="tip-row">FUELが壊れると、その位置を中心に新しく3×3の爆風が発生する。届いた範囲をさらに巻き込める。</div>
+        <div class="tip-row">EXPLOSIVEが壊れると、5×5という一段と広い爆風が発生する。一番大きな連鎖の起点になる。</div>
+        <div class="tip-row">GASが壊れてもその場では爆発しない。少し遅れて（他の爆発が一段落してから）爆発するので、離れた場所まで連鎖を伸ばすのに使える。</div>
+        <div class="tip-row">FUELが爆発すると、上下左右1マスに炎が燃え広がる。炎が触れたFUEL/EXPLOSIVEは直撃していなくても着火して爆発し、GLASSは割れる。炎はWALLを迂回するので、壁越しの隣が誘爆することもある。</div>
+        <div class="tip-row">WALLは壊れず、爆風を遮る壁になる。3×3の爆風（爆弾本体・FUEL・GAS）は隣のマスまでしか届かないため実質影響しないが、5×5届くEXPLOSIVEの爆風は、間にWALLがあるとその先には届かない。</div>
+      </div>
+      <div class="guide-section">
+        <div class="guide-heading">落下（重力）の条件</div>
+        <div class="tip-row">何かが壊れて空いたマスがあると、その真上にある物は空いたマスまで一直線に落ちる。横には動かない。</div>
+        <div class="tip-row">WALLは床としても働く。WALLに乗っている物はWALLを通り抜けず、WALLの真上で止まる。WALLは縦の列を区画に分け、区画ごとに別々に積もり直す。</div>
+        <div class="tip-row">落下そのものは何も壊さない。ただしBATTERYが落下して動いた場合は、着地した位置で下の感電条件を満たせば感電が起こる。</div>
+      </div>
+      <div class="guide-section">
+        <div class="guide-heading">感電（BATTERY×METAL）の条件</div>
+        <div class="tip-row">METAL同士が上下左右で繋がっていると、ひとつの金属ネットワークになる。</div>
+        <div class="tip-row">このネットワークにBATTERYが隣接した状態で、そのBATTERYが「壊れる」か「落下して動く」と感電が発生する。</div>
+        <div class="tip-row">感電はBATTERY自身と、ネットワーク内のMETALから1マス以内にあるFUEL/EXPLOSIVE/GASを、爆発を伴わずそのまま消し去る。</div>
+        <div class="tip-row">METAL側だけが動いてBATTERYに近づいても感電は起きない。感電が起こるのは、あくまでBATTERY側が動く・壊れる場合だけ。</div>
+      </div>
+    </div>
+    <div class="help-panel" id="tutorial-panel-practice" hidden>
+      <p class="practice-desc">全8種類の設置物を含む専用ボードで、自由に爆弾を置いて試せる。得点や制限はなく、何度でもやり直せる。</p>
+      <button id="btn-tutorial-start" class="btn btn-accent btn-large">練習を始める</button>
+    </div>
+    <button id="btn-tutorial-back" class="btn btn-large">BACK</button>
+  </section>
+
   <!-- ===================== NEW GAME CONFIRM ===================== -->
   <section id="screen-newgame-confirm" class="screen">
     <div class="confirm-card">
@@ -82,7 +127,7 @@
     </div>
     <div class="help-panel" id="howto-panel-tips" hidden>
       <div class="tip-row"><b>爆風は3×3マスだけ。</b>爆弾単体では狭い範囲しか壊せない。FUELやEXPLOSIVEを巻き込んで連鎖させることが前提。</div>
-      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> 爆風は壁を貫通しない。壁の向こう側を壊すには、壁を回り込める角度から当てる必要がある。</div>
+      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> WALLが止められるのはEXPLOSIVEの5×5爆風だけ。3×3の爆風（爆弾本体・FUEL・GAS）は元々隣までしか届かないので、壁の影響はほぼ受けない。</div>
       <div class="tip-row"><b>ガラス(GLASS)が直撃範囲外にある場合 →</b> 近くの燃料タンクが爆発すれば、火が回って割れることがある。直撃だけが手段ではない。</div>
       <div class="tip-row"><b>電池(BATTERY)と金属(METAL)が隣接している場合 →</b> どちらかを崩す・落下させるだけで自動的に感電し、隣接1マスの燃料系を巻き込む。</div>
       <div class="tip-row"><b>ガス(GAS CANISTER)を壊した場合 →</b> その場ではなく少し遅れて爆発する。他の爆発が落ち着いた後に離れた場所へ連鎖を伸ばせる。</div>
@@ -176,7 +221,7 @@
     <div class="help-panel" id="help-panel-objects" hidden></div>
     <div class="help-panel" id="help-panel-tips" hidden>
       <div class="tip-row"><b>爆風は3×3マスだけ。</b>爆弾単体では狭い範囲しか壊せない。FUELやEXPLOSIVEを巻き込んで連鎖させることが前提。</div>
-      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> 爆風は壁を貫通しない。壁の向こう側を壊すには、壁を回り込める角度から当てる必要がある。</div>
+      <div class="tip-row"><b>壁(WALL)に阻まれた場合 →</b> WALLが止められるのはEXPLOSIVEの5×5爆風だけ。3×3の爆風（爆弾本体・FUEL・GAS）は元々隣までしか届かないので、壁の影響はほぼ受けない。</div>
       <div class="tip-row"><b>ガラス(GLASS)が直撃範囲外にある場合 →</b> 近くの燃料タンクが爆発すれば、火が回って割れることがある。直撃だけが手段ではない。</div>
       <div class="tip-row"><b>電池(BATTERY)と金属(METAL)が隣接している場合 →</b> どちらかを崩す・落下させるだけで自動的に感電し、隣接1マスの燃料系を巻き込む。</div>
       <div class="tip-row"><b>ガス(GAS CANISTER)を壊した場合 →</b> その場ではなく少し遅れて爆発する。他の爆発が落ち着いた後に離れた場所へ連鎖を伸ばせる。</div>
